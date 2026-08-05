@@ -24,6 +24,7 @@ npm run smoke        # end-to-end browser test against a preview server
 npm run offline      # cold-start-with-no-network test (install, quit, relaunch offline)
 npm run parent       # parent gesture, TOTP enrollment, and the erase path
 npm run transfer     # export from one profile, import into another, twice
+npm run qr           # decode the enrollment QR and check it carries the right URL
 ```
 
 ## How it works
@@ -94,8 +95,14 @@ visible entry point, and the gate is a **TOTP code** from your authenticator app
 rather than a password — a password is memorised the first time a child watches
 you type it; a 30-second code is worthless once seen.
 
-The implementation is verified against the RFC 6238 published test vectors, so
-it interoperates with Google Authenticator, 1Password, etc. The secret is
+Enrollment shows a **QR code** to scan with a phone authenticator, with a
+tap-through `otpauth://` link for setting up on the same device and the raw
+secret behind a disclosure as a last resort. `npm run qr` rasterises the
+rendered QR and decodes it the way a camera would, asserting it carries the
+expected secret, algorithm, digit count and period.
+
+The TOTP implementation is verified against the RFC 6238 published test vectors,
+so it interoperates with Google Authenticator, 1Password, etc. The secret is
 generated on-device and never committed.
 
 Inside parent mode, **Export / import → Erase all practice data** clears every

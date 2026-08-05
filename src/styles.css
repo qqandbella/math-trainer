@@ -644,3 +644,16 @@ table.data tr:last-child td {
     display: none !important;
   }
 }
+
+.qr-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+details summary::-webkit-details-marker {
+  color: var(--ink-faint);
+}

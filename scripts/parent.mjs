@@ -105,6 +105,7 @@ try {
   console.log('ok  3-second press-and-hold on the title opens parent setup')
 
   /* --- enrollment, verified against an independent TOTP ------------------- */
+  await page.getByText("Can't scan? Enter the code by hand").click()
   const secret = (await page.locator('.code-block').innerText()).trim()
   if (!/^[A-Z2-7]{32}$/.test(secret)) fail(`enrollment secret looks wrong: "${secret}"`)
   await page.locator('input').first().fill(totp(secret))
@@ -156,7 +157,7 @@ try {
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await longPressTitle(page)
   await page.getByRole('heading', { name: 'Parent', exact: true }).waitFor({ timeout: 5000 })
-  if (await page.getByText('Add this secret').isVisible().catch(() => false)) {
+  if (await page.getByText('Scan this with your authenticator app').isVisible().catch(() => false)) {
     fail('erase wiped the parent TOTP secret; setup would have to be redone')
   }
   await page.locator('input').first().fill(totp(secret))

@@ -8,6 +8,7 @@ import { generateBatch } from '../../core/generator'
 import { selectSkills, type SelectionContext } from '../../core/selection'
 import { SessionRunner } from '../components/SessionRunner'
 import { generateSecret, otpauthUrl, secondsRemaining, verifyTotp } from '../../parent/totp'
+import { QrCode } from '../../parent/QrCode'
 import { buildExport, mergeBundle, parseBundle, shareBundle } from '../../storage/transfer'
 import { clearAllData } from '../../storage/db'
 import type { Attempt } from '../../core/types'
@@ -145,13 +146,23 @@ function Enrollment({
         </p>
         <div>
           <div className="field">
-            <label>1. Add this secret to your authenticator</label>
-            <div className="code-block">{secret}</div>
+            <label>1. Scan this with your authenticator app</label>
+            <div className="qr-wrap">
+              <QrCode value={otpauthUrl(secret)} />
+            </div>
           </div>
-          <p className="faint">
-            On this device you can tap to add it directly:{' '}
-            <a href={otpauthUrl(secret)}>open in authenticator</a>
+          <p className="faint" style={{ marginTop: 0 }}>
+            Setting up on this same device? <a href={otpauthUrl(secret)}>Open in authenticator</a>{' '}
+            instead of scanning.
           </p>
+          <details>
+            <summary className="faint" style={{ cursor: 'pointer' }}>
+              Can&apos;t scan? Enter the code by hand
+            </summary>
+            <div className="code-block" style={{ marginTop: 8 }}>
+              {secret}
+            </div>
+          </details>
         </div>
         <div className="field">
           <label>2. Enter the current code to confirm ({remaining}s left)</label>

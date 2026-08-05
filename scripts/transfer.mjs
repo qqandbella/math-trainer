@@ -84,7 +84,8 @@ try {
 
   await openParent(a)
   const secretBox = a.locator('.code-block')
-  if (await secretBox.isVisible().catch(() => false)) {
+  if (await a.getByText("Can't scan? Enter the code by hand").isVisible().catch(() => false)) {
+    await a.getByText("Can't scan? Enter the code by hand").click()
     // Fresh profile, so enroll first. Reuse the app's own code via a live read.
     const { createHmac } = await import('node:crypto')
     const secret = (await secretBox.innerText()).trim()
@@ -146,6 +147,7 @@ try {
 
   // Import without unlocking is impossible, so enroll on B too.
   const { createHmac } = await import('node:crypto')
+  await b.getByText("Can't scan? Enter the code by hand").click()
   const secretB = (await b.locator('.code-block').innerText()).trim()
   const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
   const bytesB = []
