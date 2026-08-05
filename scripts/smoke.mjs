@@ -10,7 +10,7 @@
  */
 import { chromium } from 'playwright-core'
 
-const URL = process.env.SMOKE_URL ?? 'http://localhost:4173/'
+const URL = process.env.SMOKE_URL ?? 'http://localhost:4173/math-trainer/'
 const SOLVE_COUNT = 10
 
 const fail = (message) => {

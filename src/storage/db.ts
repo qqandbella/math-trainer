@@ -6,9 +6,9 @@ export interface Settings {
   pauseBudget: number
   revealAnswersDuringSession: boolean
   /**
-   * Lowest skill tier used for written practice. A learner already working
-   * through Beast Academy 5 gains nothing from 2-digit no-carry addition, and
-   * those reps would dilute the per-skill measurements.
+   * Lowest skill tier used for written practice. A learner already fluent in
+   * single-digit tables gains nothing from drilling them, and those reps would
+   * dilute the per-skill measurements.
    */
   minTier: number
   /** Parent-calibrated reference times, skillId -> seconds. Overrides curriculum. */

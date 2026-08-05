@@ -396,12 +396,12 @@ function Calibration({ onDone }: { onDone(): void }): ReactNode {
       <h1>Calibrate</h1>
       <div className="card stack">
         <p className="muted" style={{ margin: 0 }}>
-          You answer {CALIBRATION_COUNT} problems at your natural working pace, on paper, as
-          she would. Your median time per skill becomes that skill&apos;s reference — a
+          You answer {CALIBRATION_COUNT} problems at your natural working pace, on paper, the
+          way the learner would. Your median time per skill becomes that skill&apos;s reference — a
           mastery of 100 then means &ldquo;as fast as you, with no mistakes&rdquo;.
         </p>
         <p className="faint" style={{ margin: 0 }}>
-          Nothing from this session is written to her history.
+          Nothing from this session is written to the learner&apos;s history.
         </p>
         <button
           type="button"

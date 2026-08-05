@@ -40,8 +40,8 @@ function newId(): string {
  * Drives one practice session and produces the attempt log.
  *
  * Per-problem timing starts when a problem is shown and stops on submit, with
- * paused time subtracted - the clock must measure her thinking, not the
- * interruption that made her put the iPad down.
+ * paused time subtracted - the clock must measure thinking, not the
+ * interruption that made the learner put the device down.
  */
 export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi {
   const [sessionId, setSessionId] = useState(newId)

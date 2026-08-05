@@ -71,11 +71,11 @@ row.
 
 Per-problem timing runs from when a problem appears to submit, with paused time
 subtracted, so the clock measures thinking rather than the interruption that
-made her put the iPad down. Pauses are budgeted (3 by default).
+made the learner put the device down. Pauses are budgeted (3 by default).
 
 Feedback defaults to **quiet**: correct answers flash green, wrong ones advance
 without comment, and every mistake is listed at the end with the right answer.
-For an already-cautious solver, flagging errors mid-session tends to slow her
+For an already-cautious solver, flagging errors mid-session tends to slow them
 down further. Switch to immediate right/wrong in Parent → Settings.
 
 ### Mental Challenge
@@ -88,7 +88,7 @@ is to attempt everything rather than cherry-pick.
 
 Reached by pressing and holding the dashboard title for 3 seconds. There is no
 visible entry point, and the gate is a **TOTP code** from your authenticator app
-rather than a password — a password is memorised the first time a kid watches
+rather than a password — a password is memorised the first time a child watches
 you type it; a 30-second code is worthless once seen.
 
 The implementation is verified against the RFC 6238 published test vectors, so
@@ -115,37 +115,16 @@ data.
 
 ## Deployment
 
-Hosted on Cloudflare Pages (GitHub Pages cannot serve a private repo on the free
-plan). One-time setup in the Cloudflare dashboard:
+Hosted on GitHub Pages. Every push to `main` runs the tests, builds, and
+deploys via `.github/workflows/deploy.yml` — no manual step.
 
-| Setting | Value |
-| --- | --- |
-| Framework preset | None |
-| Build command | `npm run build` |
-| Output directory | `dist` |
-| Node version | 20 or newer |
-
-After that, every push to `main` builds and deploys automatically, and branches
-get preview URLs.
+Because this is a project site, the app is served from a sub-path, so
+`vite.config.ts` sets `base: '/math-trainer/'`. Routing is hash-based, so the
+sub-path does not affect navigation.
 
 The service worker is registered with `registerType: 'prompt'` plus an in-app
 "new version is ready" banner. Without that, an installed PWA happily serves a
-cached build forever — on a device that mostly gets opened in the car, fixes
-would silently never land.
-
-## Git identity
-
-This repo pushes as the personal **qqandbella** account, never the work account.
-Both are configured **repo-locally**; nothing global is modified.
-
-```bash
-./scripts/qq-gh.sh repo view      # gh as qqandbella (isolated GH_CONFIG_DIR)
-```
-
-Git uses a repo-local credential helper that reads `$QQBELLA_GH_TOKEN`. Note
-that a system-level `credential.helper=osxkeychain` would otherwise offer the
-work credential first and make this private repo 404; the local config resets
-the inherited helper list before adding its own.
+cached build forever, and a fix would silently never reach an offline device.
 
 ## Layout
 
@@ -156,7 +135,7 @@ src/storage/       IndexedDB access, export/import merge
 src/parent/        TOTP
 src/app/           state provider, session engine, hash router
 src/ui/            pages and components
-scripts/           icon generation, smoke test, gh wrapper
+scripts/           icon generation, end-to-end smoke test
 ```
 
 ## Roadmap
@@ -166,5 +145,4 @@ scripts/           icon generation, smoke test, gh wrapper
 - **v0.1** — printable worksheet mode; 速算技巧 strategy drills (11 × abcd,
   a² − b², 通分, ×5 via ÷2×10, near-100 products).
 - **v1** — real cross-device sync, richer adaptation, strategy library.
-- **Later** — elementary olympiad topics (鸡兔同笼, 抽屉原理, 容斥) as she grows
-  into them.
+- **Later** — elementary olympiad topics (鸡兔同笼, 抽屉原理, 容斥).

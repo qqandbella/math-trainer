@@ -193,7 +193,7 @@ export function Reports({ navigate }: Props): ReactNode {
         <h3>Average time per problem</h3>
         <TrendChart points={speedSeries} unit="s" color="var(--accent)" />
         <p className="faint" style={{ marginBottom: 0 }}>
-          Lower is better. Mixes across whatever she practised that day, so it moves with the
+          Lower is better. Mixes across whatever was practised that day, so it moves with the
           problem mix as well as with speed.
         </p>
       </div>

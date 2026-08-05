@@ -2,7 +2,7 @@
 import { chromium } from 'playwright-core'
 import { mkdirSync } from 'node:fs'
 
-const URL = process.env.SMOKE_URL ?? 'http://localhost:4173/'
+const URL = process.env.SMOKE_URL ?? 'http://localhost:4173/math-trainer/'
 const OUT = '/tmp/mt-shots'
 mkdirSync(OUT, { recursive: true })
 

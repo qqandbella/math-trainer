@@ -2,10 +2,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// Cloudflare Pages serves from the domain root, so base stays '/'.
-// If this is ever moved to GitHub Pages project hosting, set base to '/math-trainer/'.
+// Served from GitHub Pages as a project site, i.e. under /<repo>/.
+// Routing is hash-based, so the sub-path does not affect navigation.
+const BASE = '/math-trainer/'
+
 export default defineConfig({
-  base: '/',
+  base: BASE,
   plugins: [
     react(),
     VitePWA({
@@ -19,7 +21,8 @@ export default defineConfig({
         background_color: '#f7f9fc',
         display: 'standalone',
         orientation: 'any',
-        start_url: '/',
+        start_url: BASE,
+        scope: BASE,
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
@@ -34,7 +37,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         // The whole app must survive a cold start with no network (car use).
-        navigateFallback: '/index.html',
+        navigateFallback: `${BASE}index.html`,
         cleanupOutdatedCaches: true,
       },
     }),
