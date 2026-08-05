@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "smoke": "vite build && (vite preview --port 4173 & sleep 3) && node scripts/smoke.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "offline": "vite build && (vite preview --port 4173 & sleep 3) && node scripts/offline.mjs http://localhost:4173/math-trainer/"
+    "offline": "vite build && (vite preview --port 4173 & sleep 3) && node scripts/offline.mjs http://localhost:4173/math-trainer/",
+    "parent": "node scripts/parent.mjs"
   },
   "dependencies": {
     "idb": "^8.0.3",

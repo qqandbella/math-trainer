@@ -22,6 +22,7 @@ npm run typecheck
 npm run build        # typecheck + production build into dist/
 npm run smoke        # end-to-end browser test against a preview server
 npm run offline      # cold-start-with-no-network test (install, quit, relaunch offline)
+npm run parent       # parent gesture, TOTP enrollment, and the erase path
 ```
 
 ## How it works
@@ -95,6 +96,13 @@ you type it; a 30-second code is worthless once seen.
 The implementation is verified against the RFC 6238 published test vectors, so
 it interoperates with Google Authenticator, 1Password, etc. The secret is
 generated on-device and never committed.
+
+Inside parent mode, **Export / import → Erase all practice data** clears every
+attempt and session on that device, behind a two-step confirmation. It keeps the
+parent secret, calibrated reference times, and settings, so wiping trial data
+before handing the app to a learner does not mean setting parent access up
+again. `npm run parent` verifies that whole path, including that a wrong code is
+rejected and that access survives the erase.
 
 ### Storage and sync
 
