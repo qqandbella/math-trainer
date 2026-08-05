@@ -56,6 +56,10 @@ async function longPressTitle(page) {
   const box = await page.locator('.app-title').boundingBox()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
+  // Drift a few pixels mid-hold: a finger never stays perfectly still, and
+  // this used to cancel the gesture via pointerleave.
+  await page.waitForTimeout(HOLD_MS / 2)
+  await page.mouse.move(box.x + box.width / 2 + 6, box.y + box.height / 2 + 5)
   await page.waitForTimeout(HOLD_MS)
   await page.mouse.up()
 }

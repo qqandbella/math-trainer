@@ -1,4 +1,11 @@
-import { useCallback, useMemo, useRef, type ReactNode } from 'react'
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react'
 import { useAppState } from '../../app/state'
 import type { RouteName } from '../../app/router'
 import { curriculum } from '../../curriculum'
@@ -29,6 +36,7 @@ function computeStreak(sessionDays: Set<string>): number {
 export function Dashboard({ navigate }: Props): ReactNode {
   const { sessions, attempts, settings } = useAppState()
   const holdTimer = useRef<number | null>(null)
+  const [holding, setHolding] = useState(false)
 
   const summary = useMemo(() => {
     const days = new Set(sessions.map((s) => dayKey(s.startedAt)))
@@ -44,13 +52,30 @@ export function Dashboard({ navigate }: Props): ReactNode {
     }
   }, [sessions, attempts])
 
-  // Hidden entry to parent mode: press and hold the title. There is no visible
-  // affordance, and the TOTP gate behind it is what actually enforces access.
-  const startHold = useCallback(() => {
-    holdTimer.current = window.setTimeout(() => navigate('parent'), SECRET_HOLD_MS)
-  }, [navigate])
+  /**
+   * Hidden entry to parent mode: press and hold the title. There is no visible
+   * affordance, and the TOTP gate behind it is what actually enforces access.
+   *
+   * The pointer is captured for the duration so that a few pixels of drift -
+   * unavoidable when holding a finger on a tablet - cannot fire pointerleave
+   * and silently reset the timer. While held, the title fades slowly, which is
+   * enough feedback to tell a parent the press registered without advertising
+   * to a child that anything is there.
+   */
+  const startHold = useCallback(
+    (event: ReactPointerEvent<HTMLHeadingElement>) => {
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+      setHolding(true)
+      holdTimer.current = window.setTimeout(() => {
+        setHolding(false)
+        navigate('parent')
+      }, SECRET_HOLD_MS)
+    },
+    [navigate],
+  )
 
   const cancelHold = useCallback(() => {
+    setHolding(false)
     if (holdTimer.current !== null) {
       window.clearTimeout(holdTimer.current)
       holdTimer.current = null
@@ -63,10 +88,9 @@ export function Dashboard({ navigate }: Props): ReactNode {
     <div className="stack">
       <div className="app-header">
         <h1
-          className="app-title"
+          className={`app-title${holding ? ' holding' : ''}`}
           onPointerDown={startHold}
           onPointerUp={cancelHold}
-          onPointerLeave={cancelHold}
           onPointerCancel={cancelHold}
           onContextMenu={(e) => e.preventDefault()}
         >

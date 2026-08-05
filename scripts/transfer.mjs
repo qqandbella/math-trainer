@@ -50,7 +50,9 @@ async function openParent(page) {
   const box = await page.locator('.app-title').boundingBox()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
-  await page.waitForTimeout(3300)
+  await page.waitForTimeout(1600)
+  await page.mouse.move(box.x + box.width / 2 + 6, box.y + box.height / 2 + 5)
+  await page.waitForTimeout(1900)
   await page.mouse.up()
 }
 

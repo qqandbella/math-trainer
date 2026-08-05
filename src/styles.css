@@ -657,3 +657,14 @@ table.data tr:last-child td {
 details summary::-webkit-details-marker {
   color: var(--ink-faint);
 }
+
+.app-title {
+  transition: opacity 0.18s ease;
+}
+
+/* Slow fade while the secret hold is in progress: enough feedback for a parent,
+   invisible unless you are already holding it down. */
+.app-title.holding {
+  opacity: 0.45;
+  transition: opacity 3s linear;
+}
