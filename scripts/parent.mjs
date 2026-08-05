@@ -112,7 +112,7 @@ try {
   await page.getByText("Can't scan? Enter the code by hand").click()
   const secret = (await page.locator('.code-block').innerText()).trim()
   if (!/^[A-Z2-7]{32}$/.test(secret)) fail(`enrollment secret looks wrong: "${secret}"`)
-  await page.locator('input').first().fill(totp(secret))
+  await page.locator('input[inputmode="numeric"]').first().fill(totp(secret))
   await page.getByRole('button', { name: 'Confirm and unlock' }).click()
   await page.getByRole('heading', { name: 'Parent', exact: true }).waitFor({ timeout: 5000 })
   console.log('ok  enrolled; app accepted a code computed by node:crypto')
@@ -122,13 +122,13 @@ try {
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await longPressTitle(page)
   await page.getByRole('heading', { name: 'Parent', exact: true }).waitFor({ timeout: 5000 })
-  await page.locator('input').first().fill('000000')
+  await page.locator('input[inputmode="numeric"]').first().fill('000000')
   await page.getByRole('button', { name: 'Unlock' }).click()
   await page.getByText('Wrong code.').waitFor({ timeout: 5000 })
   console.log('ok  a wrong code is rejected')
 
   /* --- unlock and erase ---------------------------------------------------- */
-  await page.locator('input').first().fill(totp(secret))
+  await page.locator('input[inputmode="numeric"]').first().fill(totp(secret))
   await page.getByRole('button', { name: 'Unlock' }).click()
   await page.getByRole('heading', { name: 'Parent', exact: true }).waitFor()
   const before = await page.locator('table.data tbody tr').count()
@@ -164,7 +164,7 @@ try {
   if (await page.getByText('Scan this with your authenticator app').isVisible().catch(() => false)) {
     fail('erase wiped the parent TOTP secret; setup would have to be redone')
   }
-  await page.locator('input').first().fill(totp(secret))
+  await page.locator('input[inputmode="numeric"]').first().fill(totp(secret))
   await page.getByRole('button', { name: 'Unlock' }).click()
   await page.getByRole('heading', { name: 'Parent', exact: true }).waitFor()
   console.log('ok  parent access still works after erase (secret and settings kept)')

@@ -119,6 +119,10 @@ function Enrollment({
   onCancel(): void
 }): ReactNode {
   const [secret] = useState(() => generateSecret())
+  // Named at enrollment, because every device generates its own secret and
+  // several identical "Math Trainer: parent" entries are impossible to tell
+  // apart in an authenticator app.
+  const [label, setLabel] = useState('parent')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [remaining, setRemaining] = useState(() => secondsRemaining())
@@ -146,13 +150,28 @@ function Enrollment({
         </p>
         <div>
           <div className="field">
-            <label>1. Scan this with your authenticator app</label>
+            <label>1. Name this device in your authenticator</label>
+            <input
+              type="text"
+              value={label}
+              placeholder="e.g. yuyao-ipad"
+              maxLength={40}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+            <span className="faint">
+              Shows up as &ldquo;Math Trainer &middot; {label.trim() || 'parent'}&rdquo;. Give
+              each device its own name so they are distinguishable later.
+            </span>
+          </div>
+          <div className="field">
+            <label>2. Scan this with your authenticator app</label>
             <div className="qr-wrap">
-              <QrCode value={otpauthUrl(secret)} />
+              <QrCode value={otpauthUrl(secret, label.trim() || 'parent')} />
             </div>
           </div>
           <p className="faint" style={{ marginTop: 0 }}>
-            Setting up on this same device? <a href={otpauthUrl(secret)}>Open in authenticator</a>{' '}
+            Setting up on this same device?{' '}
+            <a href={otpauthUrl(secret, label.trim() || 'parent')}>Open in authenticator</a>{' '}
             instead of scanning.
           </p>
           <details>
@@ -165,7 +184,7 @@ function Enrollment({
           </details>
         </div>
         <div className="field">
-          <label>2. Enter the current code to confirm ({remaining}s left)</label>
+          <label>3. Enter the current code to confirm ({remaining}s left)</label>
           <input
             type="text"
             inputMode="numeric"

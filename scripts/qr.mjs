@@ -38,6 +38,10 @@ try {
   await page.mouse.up()
   await page.getByRole('heading', { name: 'Set up parent access' }).waitFor({ timeout: 5000 })
 
+  // Name the device, then confirm that name is what the phone will scan.
+  const DEVICE_LABEL = 'yuyao-ipad'
+  await page.locator('input[type=text]').first().fill(DEVICE_LABEL)
+
   const qr = page.locator('.qr-wrap svg')
   if (!(await qr.isVisible())) fail('no QR code rendered on the enrollment screen')
   console.log('ok  QR code is rendered on the enrollment screen')
@@ -76,6 +80,11 @@ try {
   if (url.protocol !== 'otpauth:') fail(`wrong scheme: ${url.protocol}`)
   if (url.host !== 'totp') fail(`wrong otpauth type: ${url.host}`)
   const params = url.searchParams
+  if (!decoded.includes(encodeURIComponent(DEVICE_LABEL))) {
+    fail(`QR does not carry the device label "${DEVICE_LABEL}": ${decoded}`)
+  }
+  console.log(`ok  device label "${DEVICE_LABEL}" is embedded in the scanned payload`)
+
   const checks = [
     ['secret', secret],
     ['issuer', 'Math Trainer'],

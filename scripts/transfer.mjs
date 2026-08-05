@@ -109,7 +109,7 @@ try {
     const o = d[d.length - 1] & 0x0f
     const bin =
       ((d[o] & 0x7f) << 24) | ((d[o + 1] & 0xff) << 16) | ((d[o + 2] & 0xff) << 8) | (d[o + 3] & 0xff)
-    await a.locator('input').first().fill(String(bin % 1e6).padStart(6, '0'))
+    await a.locator('input[inputmode="numeric"]').first().fill(String(bin % 1e6).padStart(6, '0'))
     await a.getByRole('button', { name: 'Confirm and unlock' }).click()
   }
   await a.getByRole('heading', { name: 'Parent', exact: true }).waitFor({ timeout: 5000 })
@@ -172,7 +172,7 @@ try {
     ((dB[oB + 1] & 0xff) << 16) |
     ((dB[oB + 2] & 0xff) << 8) |
     (dB[oB + 3] & 0xff)
-  await b.locator('input').first().fill(String(binB % 1e6).padStart(6, '0'))
+  await b.locator('input[inputmode="numeric"]').first().fill(String(binB % 1e6).padStart(6, '0'))
   await b.getByRole('button', { name: 'Confirm and unlock' }).click()
   await b.getByRole('heading', { name: 'Parent', exact: true }).waitFor({ timeout: 5000 })
 
