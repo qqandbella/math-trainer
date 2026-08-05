@@ -296,7 +296,7 @@ function MasteryTable(): ReactNode {
 /* ------------------------------------------------------------ calibration */
 
 function Calibration({ onDone }: { onDone(): void }): ReactNode {
-  const { practiceSkills, stats, updateSettings, settings } = useAppState()
+  const { practicePool, practiceSkills, stats, updateSettings, settings } = useAppState()
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<Record<string, number> | null>(null)
 
@@ -311,7 +311,7 @@ function Calibration({ onDone }: { onDone(): void }): ReactNode {
     }
     // Spread evenly across the ladder rather than weighting by her weakness -
     // calibration wants coverage, not remediation.
-    const chosen = selectSkills(practiceSkills, CALIBRATION_COUNT, {
+    const chosen = selectSkills(practicePool, CALIBRATION_COUNT, {
       ...ctx,
       stats: new Map(),
     })
@@ -321,7 +321,7 @@ function Calibration({ onDone }: { onDone(): void }): ReactNode {
       pauseBudget: 1,
       allowSkip: false,
     }
-  }, [practiceSkills, stats])
+  }, [practicePool, stats])
 
   const handleComplete = useCallback((attempts: Attempt[]) => {
     const bySkill = new Map<string, number[]>()
@@ -564,6 +564,31 @@ function SettingsPanel({ onBack }: { onBack(): void }): ReactNode {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="field">
+          <label>Difficulty floor for written practice</label>
+          <div className="chip-row">
+            {[
+              { tier: 1, label: 'Everything' },
+              { tier: 2, label: 'Skip the easiest' },
+              { tier: 3, label: 'Harder only' },
+            ].map(({ tier, label }) => (
+              <button
+                key={tier}
+                type="button"
+                className={`chip${settings.minTier === tier ? ' selected' : ''}`}
+                onClick={() => void updateSettings({ minTier: tier })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="faint">
+            Keeps single-digit tables and no-carry addition out of written sessions, where
+            they are wasted reps that also dilute the per-skill numbers. Mental Challenge
+            ignores this — fast easy mental work is still worth doing.
+          </span>
         </div>
 
         <div className="field">

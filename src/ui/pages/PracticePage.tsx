@@ -29,7 +29,7 @@ const OP_LABELS: Record<Op, string> = {
 }
 
 export function PracticePage({ mode, navigate }: Props): ReactNode {
-  const { stats, practiceSkills, mentalSkills, settings } = useAppState()
+  const { stats, practicePool, mentalSkills, settings } = useAppState()
   const [seed, setSeed] = useState(() => (Math.random() * 2 ** 32) >>> 0)
   const [started, setStarted] = useState(mode === 'daily' || mode === 'timed')
 
@@ -50,7 +50,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
 
     if (mode === 'daily') {
       const preset = curriculum.presets.daily
-      const chosen = selectByMix(practiceSkills, preset.mix, preset.problemCount, ctx)
+      const chosen = selectByMix(practicePool, preset.mix, preset.problemCount, ctx)
       return {
         mode: 'daily' as SessionMode,
         problems: generateBatch(chosen, rng),
@@ -61,7 +61,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
 
     if (mode === 'timed') {
       const preset = curriculum.presets.timed
-      const chosen = selectByMix(practiceSkills, preset.mix, TIMED_OVERPROVISION, ctx)
+      const chosen = selectByMix(practicePool, preset.mix, TIMED_OVERPROVISION, ctx)
       return {
         mode: 'timed' as SessionMode,
         problems: generateBatch(chosen, rng),
@@ -83,7 +83,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
     }
 
     const mix: OpMix = Object.fromEntries(customOps.map((op) => [op, 1]))
-    const chosen = selectByMix(practiceSkills, mix, customCount, ctx)
+    const chosen = selectByMix(practicePool, mix, customCount, ctx)
     return {
       mode: 'custom' as SessionMode,
       problems: generateBatch(chosen, rng),
@@ -94,7 +94,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
     mode,
     seed,
     stats,
-    practiceSkills,
+    practicePool,
     mentalSkills,
     settings.pauseBudget,
     customOps,

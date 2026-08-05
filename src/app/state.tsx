@@ -29,7 +29,11 @@ interface AppState {
   stats: Map<string, SkillStat>
   /** Curriculum skills with parent-calibrated target times applied. */
   skills: Skill[]
+  /** Every non-mental skill, for reporting. */
   practiceSkills: Skill[]
+  /** Non-mental skills at or above the difficulty floor, for generating work. */
+  practicePool: Skill[]
+  /** Mental skills are not floored: fast easy mental work is still valuable. */
   mentalSkills: Skill[]
   recordSession(session: SessionRecord, attempts: readonly Attempt[]): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<void>
@@ -92,12 +96,23 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       stats,
       skills,
       practiceSkills: skills.filter((s) => !s.mental),
+      practicePool: skills.filter((s) => !s.mental && s.tier >= settings.minTier),
       mentalSkills: skills.filter((s) => s.mental),
       recordSession,
       updateSettings,
       reload,
     }),
-    [ready, attempts, sessions, settings, stats, skills, recordSession, updateSettings, reload],
+    [
+      ready,
+      attempts,
+      sessions,
+      settings,
+      stats,
+      skills,
+      recordSession,
+      updateSettings,
+      reload,
+    ],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

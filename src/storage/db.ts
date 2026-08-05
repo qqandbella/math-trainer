@@ -5,11 +5,16 @@ export interface Settings {
   learnerName: string
   pauseBudget: number
   revealAnswersDuringSession: boolean
+  /**
+   * Lowest skill tier used for written practice. A learner already working
+   * through Beast Academy 5 gains nothing from 2-digit no-carry addition, and
+   * those reps would dilute the per-skill measurements.
+   */
+  minTier: number
   /** Parent-calibrated reference times, skillId -> seconds. Overrides curriculum. */
   targetOverrides: Record<string, number>
   /** Base32 TOTP secret for the parent gate. Generated on-device, never shipped. */
   parentTotpSecret: string | null
-  /** Milliseconds of clock skew tolerated by the TOTP check. */
   createdAt: number
 }
 
@@ -17,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
   learnerName: '',
   pauseBudget: 3,
   revealAnswersDuringSession: false,
+  minTier: 2,
   targetOverrides: {},
   parentTotpSecret: null,
   createdAt: 0,
