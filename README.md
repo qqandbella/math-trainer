@@ -23,6 +23,7 @@ npm run build        # typecheck + production build into dist/
 npm run smoke        # end-to-end browser test against a preview server
 npm run offline      # cold-start-with-no-network test (install, quit, relaunch offline)
 npm run parent       # parent gesture, TOTP enrollment, and the erase path
+npm run transfer     # export from one profile, import into another, twice
 ```
 
 ## How it works
@@ -110,6 +111,13 @@ Everything lives in IndexedDB on the device. Attempts are immutable and
 UUID-keyed, so Parent → *Export / import* merges by set-union: importing the
 same file twice is a no-op, and two devices merge to the same result in either
 order. Real cross-device sync is a v1 job, and this shape makes it a small one.
+
+**Browser account sync does not move this data.** Chrome Sync covers bookmarks,
+history, passwords and open tabs — not IndexedDB, localStorage or Cache Storage.
+Signing the same account in on another device gets you the bookmark, not the
+practice history. Export / import is the only transfer path, and `npm run
+transfer` verifies it across two separate browser profiles, including that a
+repeated import does not double-count.
 
 ## Configuration
 
