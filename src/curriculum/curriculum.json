@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "note": "Hand-editable curriculum. Skill ids are stable keys into practice history - renaming one orphans its data. targetSec is the fluent-adult reference time used to score speed; run a parent calibration session to replace the estimates with real numbers.",
+
+  "scoring": {
+    "ewmaAlpha": 0.25,
+    "minAttemptsToRate": 8,
+    "accuracyExponent": 1.5,
+    "speedCap": 1.25,
+    "recentWindow": 20
+  },
+
+  "selection": {
+    "weakestShare": 0.55,
+    "reviewShare": 0.25,
+    "newShare": 0.2,
+    "reviewStaleDays": 3,
+    "maxShareOfSessionPerSkill": 0.2,
+    "unratedMasteryAssumption": 45
+  },
+
+  "session": {
+    "defaultPauseBudget": 3,
+    "maxPauseSeconds": 300,
+    "revealAnswersDuringSession": false
+  },
+
+  "presets": {
+    "daily": {
+      "label": "Daily Practice",
+      "problemCount": 60,
+      "mix": { "add": 10, "sub": 10, "mul": 20, "div": 12, "mixed": 8 }
+    },
+    "timed": {
+      "label": "Timed Challenge",
+      "durationSec": 300,
+      "mix": { "add": 1, "sub": 1, "mul": 2, "div": 1, "mixed": 1 }
+    },
+    "mental": {
+      "label": "Mental Challenge",
+      "durationSec": 180,
+      "durationChoices": [120, 180, 300],
+      "skipPenaltyDivisor": 2
+    }
+  },
+
+  "skills": [
+    { "id": "add_2x2_nc", "op": "add", "group": "Addition", "label": "2-digit + 2-digit (no carry)", "digitsA": 2, "digitsB": 2, "features": ["no_carry"], "targetSec": 2.5, "tier": 1, "weight": 1, "mental": false },
+    { "id": "add_2x2", "op": "add", "group": "Addition", "label": "2-digit + 2-digit (carry)", "digitsA": 2, "digitsB": 2, "features": ["carry"], "targetSec": 3, "tier": 1, "weight": 2, "mental": false },
+    { "id": "add_3x2", "op": "add", "group": "Addition", "label": "3-digit + 2-digit", "digitsA": 3, "digitsB": 2, "features": ["carry"], "targetSec": 4.5, "tier": 2, "weight": 2, "mental": false },
+    { "id": "add_3x3", "op": "add", "group": "Addition", "label": "3-digit + 3-digit", "digitsA": 3, "digitsB": 3, "features": ["carry"], "targetSec": 5.5, "tier": 2, "weight": 3, "mental": false },
+    { "id": "add_4x3", "op": "add", "group": "Addition", "label": "4-digit + 3-digit", "digitsA": 4, "digitsB": 3, "features": ["carry"], "targetSec": 7, "tier": 3, "weight": 3, "mental": false },
+    { "id": "add_4x4", "op": "add", "group": "Addition", "label": "4-digit + 4-digit", "digitsA": 4, "digitsB": 4, "features": ["carry"], "targetSec": 8.5, "tier": 3, "weight": 4, "mental": false },
+    { "id": "add_3terms", "op": "add", "group": "Addition", "label": "three 3-digit addends", "digitsA": 3, "digitsB": 3, "features": ["carry", "three_terms"], "targetSec": 12, "tier": 4, "weight": 4, "mental": false },
+
+    { "id": "sub_2x2", "op": "sub", "group": "Subtraction", "label": "2-digit - 2-digit (borrow)", "digitsA": 2, "digitsB": 2, "features": ["borrow"], "targetSec": 3, "tier": 1, "weight": 2, "mental": false },
+    { "id": "sub_3x2", "op": "sub", "group": "Subtraction", "label": "3-digit - 2-digit", "digitsA": 3, "digitsB": 2, "features": ["borrow"], "targetSec": 4.5, "tier": 2, "weight": 2, "mental": false },
+    { "id": "sub_3x3", "op": "sub", "group": "Subtraction", "label": "3-digit - 3-digit", "digitsA": 3, "digitsB": 3, "features": ["borrow"], "targetSec": 6, "tier": 2, "weight": 3, "mental": false },
+    { "id": "sub_3x3_zero", "op": "sub", "group": "Subtraction", "label": "3-digit - 3-digit (borrow across 0)", "digitsA": 3, "digitsB": 3, "features": ["borrow_zero"], "targetSec": 7.5, "tier": 3, "weight": 4, "mental": false },
+    { "id": "sub_4x3", "op": "sub", "group": "Subtraction", "label": "4-digit - 3-digit", "digitsA": 4, "digitsB": 3, "features": ["borrow"], "targetSec": 8, "tier": 3, "weight": 3, "mental": false },
+    { "id": "sub_4x4", "op": "sub", "group": "Subtraction", "label": "4-digit - 4-digit", "digitsA": 4, "digitsB": 4, "features": ["borrow"], "targetSec": 9.5, "tier": 3, "weight": 4, "mental": false },
+    { "id": "sub_4x4_zero", "op": "sub", "group": "Subtraction", "label": "4-digit - 4-digit (borrow across 0)", "digitsA": 4, "digitsB": 4, "features": ["borrow_zero"], "targetSec": 11, "tier": 4, "weight": 5, "mental": false },
+
+    { "id": "mul_1x1", "op": "mul", "group": "Multiplication", "label": "times tables", "digitsA": 1, "digitsB": 1, "features": [], "targetSec": 1.8, "tier": 1, "weight": 1, "mental": false },
+    { "id": "mul_2x1", "op": "mul", "group": "Multiplication", "label": "2-digit x 1-digit", "digitsA": 2, "digitsB": 1, "features": [], "targetSec": 3.5, "tier": 1, "weight": 2, "mental": false },
+    { "id": "mul_3x1", "op": "mul", "group": "Multiplication", "label": "3-digit x 1-digit", "digitsA": 3, "digitsB": 1, "features": [], "targetSec": 5.5, "tier": 2, "weight": 2, "mental": false },
+    { "id": "mul_4x1", "op": "mul", "group": "Multiplication", "label": "4-digit x 1-digit", "digitsA": 4, "digitsB": 1, "features": [], "targetSec": 7.5, "tier": 2, "weight": 3, "mental": false },
+    { "id": "mul_zeros", "op": "mul", "group": "Multiplication", "label": "3-digit x 2-digit (trailing zeros)", "digitsA": 3, "digitsB": 2, "features": ["trailing_zeros"], "targetSec": 8, "tier": 2, "weight": 2, "mental": false },
+    { "id": "mul_2x2", "op": "mul", "group": "Multiplication", "label": "2-digit x 2-digit", "digitsA": 2, "digitsB": 2, "features": [], "targetSec": 9, "tier": 2, "weight": 3, "mental": false },
+    { "id": "mul_3x2", "op": "mul", "group": "Multiplication", "label": "3-digit x 2-digit", "digitsA": 3, "digitsB": 2, "features": [], "targetSec": 15, "tier": 3, "weight": 4, "mental": false },
+    { "id": "mul_4x2", "op": "mul", "group": "Multiplication", "label": "4-digit x 2-digit", "digitsA": 4, "digitsB": 2, "features": [], "targetSec": 20, "tier": 3, "weight": 5, "mental": false },
+    { "id": "mul_3x3", "op": "mul", "group": "Multiplication", "label": "3-digit x 3-digit", "digitsA": 3, "digitsB": 3, "features": [], "targetSec": 26, "tier": 4, "weight": 6, "mental": false },
+
+    { "id": "div_2x1_exact", "op": "div", "group": "Division", "label": "2-digit / 1-digit", "digitsA": 2, "digitsB": 1, "features": ["exact"], "targetSec": 3, "tier": 1, "weight": 2, "mental": false },
+    { "id": "div_3x1_exact", "op": "div", "group": "Division", "label": "3-digit / 1-digit", "digitsA": 3, "digitsB": 1, "features": ["exact"], "targetSec": 6, "tier": 2, "weight": 3, "mental": false },
+    { "id": "div_3x1_rem", "op": "div", "group": "Division", "label": "3-digit / 1-digit (remainder)", "digitsA": 3, "digitsB": 1, "features": ["remainder"], "targetSec": 8, "tier": 2, "weight": 3, "mental": false },
+    { "id": "div_3x2_exact", "op": "div", "group": "Division", "label": "3-digit / 2-digit", "digitsA": 3, "digitsB": 2, "features": ["exact"], "targetSec": 10, "tier": 3, "weight": 4, "mental": false },
+    { "id": "div_4x1_rem", "op": "div", "group": "Division", "label": "4-digit / 1-digit (remainder)", "digitsA": 4, "digitsB": 1, "features": ["remainder"], "targetSec": 11, "tier": 3, "weight": 4, "mental": false },
+    { "id": "div_4x2_exact", "op": "div", "group": "Division", "label": "4-digit / 2-digit", "digitsA": 4, "digitsB": 2, "features": ["exact"], "targetSec": 18, "tier": 3, "weight": 5, "mental": false },
+    { "id": "div_4x2_rem", "op": "div", "group": "Division", "label": "4-digit / 2-digit (remainder)", "digitsA": 4, "digitsB": 2, "features": ["remainder"], "targetSec": 22, "tier": 4, "weight": 6, "mental": false },
+    { "id": "div_5x2_rem", "op": "div", "group": "Division", "label": "5-digit / 2-digit (remainder)", "digitsA": 5, "digitsB": 2, "features": ["remainder"], "targetSec": 30, "tier": 4, "weight": 7, "mental": false },
+
+    { "id": "mix_precedence", "op": "mixed", "group": "Mixed", "label": "a + b x c", "digitsA": 2, "digitsB": 2, "features": ["precedence"], "targetSec": 8, "tier": 3, "weight": 3, "mental": false },
+    { "id": "mix_parens", "op": "mixed", "group": "Mixed", "label": "(a + b) x c", "digitsA": 2, "digitsB": 2, "features": ["parens"], "targetSec": 10, "tier": 3, "weight": 4, "mental": false },
+    { "id": "mix_4terms", "op": "mixed", "group": "Mixed", "label": "a x b + c x d", "digitsA": 2, "digitsB": 2, "features": ["precedence", "three_terms"], "targetSec": 16, "tier": 4, "weight": 5, "mental": false },
+
+    { "id": "men_mul_1x1", "op": "mul", "group": "Mental", "label": "times tables", "digitsA": 1, "digitsB": 1, "features": [], "targetSec": 1.5, "tier": 1, "weight": 1, "mental": true },
+    { "id": "men_add_2x1", "op": "add", "group": "Mental", "label": "2-digit + 1-digit", "digitsA": 2, "digitsB": 1, "features": ["carry"], "targetSec": 2, "tier": 1, "weight": 1, "mental": true },
+    { "id": "men_add_2x2", "op": "add", "group": "Mental", "label": "2-digit + 2-digit", "digitsA": 2, "digitsB": 2, "features": ["carry"], "targetSec": 3, "tier": 2, "weight": 2, "mental": true },
+    { "id": "men_sub_2x2", "op": "sub", "group": "Mental", "label": "2-digit - 2-digit", "digitsA": 2, "digitsB": 2, "features": ["borrow"], "targetSec": 3.5, "tier": 2, "weight": 2, "mental": true },
+    { "id": "men_mul_2x1", "op": "mul", "group": "Mental", "label": "2-digit x 1-digit", "digitsA": 2, "digitsB": 1, "features": [], "targetSec": 3.5, "tier": 2, "weight": 3, "mental": true },
+    { "id": "men_div_2x1", "op": "div", "group": "Mental", "label": "2-digit / 1-digit", "digitsA": 2, "digitsB": 1, "features": ["exact"], "targetSec": 3.5, "tier": 2, "weight": 3, "mental": true },
+    { "id": "men_add_3terms", "op": "add", "group": "Mental", "label": "three 2-digit addends", "digitsA": 2, "digitsB": 2, "features": ["carry", "three_terms"], "targetSec": 5, "tier": 3, "weight": 3, "mental": true },
+    { "id": "men_mul_x11", "op": "mul", "group": "Mental", "label": "2-digit x 11", "digitsA": 2, "digitsB": 2, "fixedB": 11, "features": [], "targetSec": 3, "tier": 3, "weight": 3, "mental": true },
+    { "id": "men_mul_x5", "op": "mul", "group": "Mental", "label": "2-digit x 5", "digitsA": 2, "digitsB": 1, "fixedB": 5, "features": [], "targetSec": 2.5, "tier": 2, "weight": 2, "mental": true },
+    { "id": "men_div_3x1", "op": "div", "group": "Mental", "label": "3-digit / 1-digit", "digitsA": 3, "digitsB": 1, "features": ["exact"], "targetSec": 5.5, "tier": 3, "weight": 4, "mental": true },
+    { "id": "men_mul_2x2", "op": "mul", "group": "Mental", "label": "2-digit x 2-digit", "digitsA": 2, "digitsB": 2, "features": [], "targetSec": 7, "tier": 4, "weight": 5, "mental": true }
+  ]
+}
