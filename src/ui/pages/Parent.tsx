@@ -1,0 +1,598 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useAppState } from '../../app/state'
+import type { RouteName } from '../../app/router'
+import { curriculum } from '../../curriculum'
+import { computeMastery, median } from '../../core/mastery'
+import { createRng } from '../../core/rng'
+import { generateBatch } from '../../core/generator'
+import { selectSkills, type SelectionContext } from '../../core/selection'
+import { SessionRunner } from '../components/SessionRunner'
+import { generateSecret, otpauthUrl, secondsRemaining, verifyTotp } from '../../parent/totp'
+import { buildExport, mergeBundle, parseBundle, shareBundle } from '../../storage/transfer'
+import { clearAllData } from '../../storage/db'
+import type { Attempt } from '../../core/types'
+
+interface Props {
+  navigate(route: RouteName): void
+}
+
+const CALIBRATION_COUNT = 40
+
+export function Parent({ navigate }: Props): ReactNode {
+  const { settings, updateSettings } = useAppState()
+  const [unlocked, setUnlocked] = useState(false)
+
+  if (!unlocked) {
+    return settings.parentTotpSecret ? (
+      <Gate
+        secret={settings.parentTotpSecret}
+        onUnlock={() => setUnlocked(true)}
+        onCancel={() => navigate('home')}
+      />
+    ) : (
+      <Enrollment
+        onEnrolled={async (secret) => {
+          await updateSettings({ parentTotpSecret: secret })
+          setUnlocked(true)
+        }}
+        onCancel={() => navigate('home')}
+      />
+    )
+  }
+
+  return <ParentHome navigate={navigate} />
+}
+
+/* ------------------------------------------------------------------ gate */
+
+function Gate({
+  secret,
+  onUnlock,
+  onCancel,
+}: {
+  secret: string
+  onUnlock(): void
+  onCancel(): void
+}): ReactNode {
+  const [code, setCode] = useState('')
+  const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
+
+  const submit = useCallback(async () => {
+    setChecking(true)
+    const ok = await verifyTotp(code, secret)
+    setChecking(false)
+    if (ok) onUnlock()
+    else {
+      setError('Wrong code.')
+      setCode('')
+    }
+  }, [code, secret, onUnlock])
+
+  return (
+    <div className="stack">
+      <h1>Parent</h1>
+      <div className="card stack">
+        <div className="field">
+          <label>Authenticator code</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={code}
+            maxLength={6}
+            placeholder="000000"
+            onChange={(e) => {
+              setError('')
+              setCode(e.target.value.replace(/\D/g, ''))
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void submit()
+            }}
+          />
+          {error && <span style={{ color: 'var(--bad)', fontSize: 13 }}>{error}</span>}
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary btn-block"
+          disabled={code.length !== 6 || checking}
+          onClick={() => void submit()}
+        >
+          Unlock
+        </button>
+        <button type="button" className="btn btn-ghost btn-block" onClick={onCancel}>
+          Back
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------ enrollment */
+
+function Enrollment({
+  onEnrolled,
+  onCancel,
+}: {
+  onEnrolled(secret: string): Promise<void>
+  onCancel(): void
+}): ReactNode {
+  const [secret] = useState(() => generateSecret())
+  const [code, setCode] = useState('')
+  const [error, setError] = useState('')
+  const [remaining, setRemaining] = useState(() => secondsRemaining())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setRemaining(secondsRemaining()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const confirm = useCallback(async () => {
+    if (await verifyTotp(code, secret)) await onEnrolled(secret)
+    else {
+      setError('That code does not match. Check the secret was entered correctly.')
+      setCode('')
+    }
+  }, [code, secret, onEnrolled])
+
+  return (
+    <div className="stack">
+      <h1>Set up parent access</h1>
+      <div className="card stack">
+        <p className="muted" style={{ margin: 0 }}>
+          Parent mode is protected by a time-based code from your authenticator app rather
+          than a password — a code seen over your shoulder is useless 30 seconds later.
+        </p>
+        <div>
+          <div className="field">
+            <label>1. Add this secret to your authenticator</label>
+            <div className="code-block">{secret}</div>
+          </div>
+          <p className="faint">
+            On this device you can tap to add it directly:{' '}
+            <a href={otpauthUrl(secret)}>open in authenticator</a>
+          </p>
+        </div>
+        <div className="field">
+          <label>2. Enter the current code to confirm ({remaining}s left)</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={code}
+            maxLength={6}
+            placeholder="000000"
+            onChange={(e) => {
+              setError('')
+              setCode(e.target.value.replace(/\D/g, ''))
+            }}
+          />
+          {error && <span style={{ color: 'var(--bad)', fontSize: 13 }}>{error}</span>}
+        </div>
+        <p className="faint" style={{ margin: 0 }}>
+          Store the secret somewhere safe. It lives only on this device — clearing the
+          browser data means setting it up again.
+        </p>
+        <button
+          type="button"
+          className="btn btn-primary btn-block"
+          disabled={code.length !== 6}
+          onClick={() => void confirm()}
+        >
+          Confirm and unlock
+        </button>
+        <button type="button" className="btn btn-ghost btn-block" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ----------------------------------------------------------- parent home */
+
+type Panel = 'menu' | 'calibrate' | 'data' | 'settings'
+
+function ParentHome({ navigate }: Props): ReactNode {
+  const [panel, setPanel] = useState<Panel>('menu')
+
+  if (panel === 'calibrate') return <Calibration onDone={() => setPanel('menu')} />
+  if (panel === 'data') return <DataPanel onBack={() => setPanel('menu')} />
+  if (panel === 'settings') return <SettingsPanel onBack={() => setPanel('menu')} />
+
+  return (
+    <div className="stack">
+      <div className="row-between">
+        <h1>Parent</h1>
+        <button type="button" className="btn btn-ghost" onClick={() => navigate('home')}>
+          exit
+        </button>
+      </div>
+
+      <MasteryTable />
+
+      <div className="mode-grid">
+        <button type="button" className="mode-card" onClick={() => setPanel('calibrate')}>
+          <span className="title">Calibrate reference times</span>
+          <span className="muted">
+            Run {CALIBRATION_COUNT} problems yourself; your speed becomes the 100 mark
+          </span>
+        </button>
+        <button type="button" className="mode-card" onClick={() => setPanel('data')}>
+          <span className="title">Export / import</span>
+          <span className="muted">Move or merge data between devices</span>
+        </button>
+        <button type="button" className="mode-card" onClick={() => setPanel('settings')}>
+          <span className="title">Settings</span>
+          <span className="muted">Name, pauses, feedback style</span>
+        </button>
+        <button type="button" className="mode-card" onClick={() => navigate('reports')}>
+          <span className="title">Full progress report</span>
+          <span className="muted">Same charts she sees</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function MasteryTable(): ReactNode {
+  const { skills, stats } = useAppState()
+  const rows = useMemo(
+    () =>
+      skills
+        .map((skill) => ({
+          skill,
+          m: computeMastery(stats.get(skill.id), skill, curriculum.scoring),
+        }))
+        .filter((r) => r.m.attempts > 0)
+        .sort((a, b) => a.m.score - b.m.score),
+    [skills, stats],
+  )
+
+  if (rows.length === 0) {
+    return (
+      <div className="card">
+        <p className="muted" style={{ margin: 0 }}>
+          No practice data yet.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="card">
+      <h3>Every practised skill</h3>
+      <table className="data">
+        <thead>
+          <tr>
+            <th>Skill</th>
+            <th style={{ textAlign: 'right' }}>n</th>
+            <th style={{ textAlign: 'right' }}>acc</th>
+            <th style={{ textAlign: 'right' }}>median</th>
+            <th style={{ textAlign: 'right' }}>target</th>
+            <th style={{ textAlign: 'right' }}>mastery</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ skill, m }) => (
+            <tr key={skill.id}>
+              <td>{skill.label}</td>
+              <td style={{ textAlign: 'right' }}>{m.attempts}</td>
+              <td style={{ textAlign: 'right' }}>{Math.round(m.accuracy * 100)}%</td>
+              <td style={{ textAlign: 'right' }}>{(m.medianMs / 1000).toFixed(1)}s</td>
+              <td style={{ textAlign: 'right' }} className="muted">
+                {skill.targetSec}s
+              </td>
+              <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                {m.rated ? Math.round(m.score) : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------ calibration */
+
+function Calibration({ onDone }: { onDone(): void }): ReactNode {
+  const { practiceSkills, stats, updateSettings, settings } = useAppState()
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<Record<string, number> | null>(null)
+
+  const spec = useMemo(() => {
+    const rng = createRng((Math.random() * 2 ** 32) >>> 0)
+    const ctx: SelectionContext = {
+      stats,
+      now: Date.now(),
+      rng,
+      selection: curriculum.selection,
+      scoring: curriculum.scoring,
+    }
+    // Spread evenly across the ladder rather than weighting by her weakness -
+    // calibration wants coverage, not remediation.
+    const chosen = selectSkills(practiceSkills, CALIBRATION_COUNT, {
+      ...ctx,
+      stats: new Map(),
+    })
+    return {
+      mode: 'calibration' as const,
+      problems: generateBatch(chosen, rng),
+      pauseBudget: 1,
+      allowSkip: false,
+    }
+  }, [practiceSkills, stats])
+
+  const handleComplete = useCallback((attempts: Attempt[]) => {
+    const bySkill = new Map<string, number[]>()
+    for (const a of attempts) {
+      if (!a.correct) continue
+      const list = bySkill.get(a.skillId)
+      if (list) list.push(a.ms)
+      else bySkill.set(a.skillId, [a.ms])
+    }
+    const overrides: Record<string, number> = {}
+    for (const [skillId, times] of bySkill) {
+      overrides[skillId] = Math.round((median(times) / 1000) * 10) / 10
+    }
+    setResult(overrides)
+    setRunning(false)
+  }, [])
+
+  const apply = useCallback(async () => {
+    if (!result) return
+    await updateSettings({
+      targetOverrides: { ...settings.targetOverrides, ...result },
+    })
+    onDone()
+  }, [result, settings.targetOverrides, updateSettings, onDone])
+
+  if (running) {
+    return (
+      <SessionRunner
+        spec={spec}
+        persist={false}
+        onComplete={handleComplete}
+        onExit={() => setRunning(false)}
+      />
+    )
+  }
+
+  if (result) {
+    const entries = Object.entries(result)
+    return (
+      <div className="stack">
+        <h1>Calibration result</h1>
+        <div className="card">
+          <p className="muted">
+            These become the 100 mark for the skills you covered. Skills you did not hit keep
+            their current reference time.
+          </p>
+          <table className="data">
+            <tbody>
+              {entries.map(([skillId, seconds]) => (
+                <tr key={skillId}>
+                  <td>{practiceSkills.find((s) => s.id === skillId)?.label ?? skillId}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 650 }}>{seconds}s</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="row">
+          <button type="button" className="btn btn-primary btn-block" onClick={() => void apply()}>
+            Use these times
+          </button>
+          <button type="button" className="btn btn-block" onClick={onDone}>
+            Discard
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="stack">
+      <h1>Calibrate</h1>
+      <div className="card stack">
+        <p className="muted" style={{ margin: 0 }}>
+          You answer {CALIBRATION_COUNT} problems at your natural working pace, on paper, as
+          she would. Your median time per skill becomes that skill&apos;s reference — a
+          mastery of 100 then means &ldquo;as fast as you, with no mistakes&rdquo;.
+        </p>
+        <p className="faint" style={{ margin: 0 }}>
+          Nothing from this session is written to her history.
+        </p>
+        <button
+          type="button"
+          className="btn btn-primary btn-block"
+          onClick={() => setRunning(true)}
+        >
+          Start calibration
+        </button>
+        <button type="button" className="btn btn-ghost btn-block" onClick={onDone}>
+          Back
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------- data i/o */
+
+function DataPanel({ onBack }: { onBack(): void }): ReactNode {
+  const { reload, attempts, sessions } = useAppState()
+  const [status, setStatus] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [confirmingReset, setConfirmingReset] = useState(false)
+
+  const doExport = useCallback(async () => {
+    const bundle = await buildExport(navigator.userAgent.includes('iPad') ? 'iPad' : 'computer')
+    const how = await shareBundle(bundle)
+    setStatus(
+      how === 'shared'
+        ? 'Shared.'
+        : `Downloaded ${bundle.attempts.length} attempts and ${bundle.sessions.length} sessions.`,
+    )
+  }, [])
+
+  const doImport = useCallback(
+    async (file: File) => {
+      try {
+        const report = await mergeBundle(parseBundle(await file.text()))
+        await reload()
+        setStatus(
+          `Merged: ${report.attemptsAdded} new attempts (${report.attemptsSkipped} already here), ` +
+            `${report.sessionsAdded} new sessions.`,
+        )
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Import failed.')
+      }
+    },
+    [reload],
+  )
+
+  return (
+    <div className="stack">
+      <h1>Export / import</h1>
+      <div className="card stack">
+        <p className="muted" style={{ margin: 0 }}>
+          {attempts.length} attempts across {sessions.length} sessions on this device.
+          Merging is by record id, so importing the same file twice changes nothing and two
+          devices can be merged in either order.
+        </p>
+        <button type="button" className="btn btn-primary btn-block" onClick={() => void doExport()}>
+          Export data
+        </button>
+        <button
+          type="button"
+          className="btn btn-block"
+          onClick={() => fileRef.current?.click()}
+        >
+          Import and merge
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) void doImport(file)
+            e.target.value = ''
+          }}
+        />
+        {status && <p className="faint" style={{ margin: 0 }}>{status}</p>}
+      </div>
+
+      <div className="card stack">
+        <h3>Danger</h3>
+        {confirmingReset ? (
+          <>
+            <p className="muted" style={{ margin: 0 }}>
+              This erases every attempt and session on this device. Export first if you want
+              a copy.
+            </p>
+            <button
+              type="button"
+              className="btn btn-danger btn-block"
+              onClick={() => {
+                void clearAllData().then(reload).then(() => {
+                  setConfirmingReset(false)
+                  setStatus('All practice data erased.')
+                })
+              }}
+            >
+              Yes, erase everything
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-block"
+              onClick={() => setConfirmingReset(false)}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-danger btn-block"
+            onClick={() => setConfirmingReset(true)}
+          >
+            Erase all practice data
+          </button>
+        )}
+      </div>
+
+      <button type="button" className="btn btn-ghost btn-block" onClick={onBack}>
+        Back
+      </button>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------- settings */
+
+function SettingsPanel({ onBack }: { onBack(): void }): ReactNode {
+  const { settings, updateSettings } = useAppState()
+
+  return (
+    <div className="stack">
+      <h1>Settings</h1>
+      <div className="card">
+        <div className="field">
+          <label>Learner name</label>
+          <input
+            type="text"
+            value={settings.learnerName}
+            placeholder="shown on the dashboard"
+            onChange={(e) => void updateSettings({ learnerName: e.target.value })}
+          />
+        </div>
+
+        <div className="field">
+          <label>Pauses allowed per session</label>
+          <div className="chip-row">
+            {[0, 1, 2, 3, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`chip${settings.pauseBudget === n ? ' selected' : ''}`}
+                onClick={() => void updateSettings({ pauseBudget: n })}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field">
+          <label>Feedback during a session</label>
+          <div className="chip-row">
+            <button
+              type="button"
+              className={`chip${!settings.revealAnswersDuringSession ? ' selected' : ''}`}
+              onClick={() => void updateSettings({ revealAnswersDuringSession: false })}
+            >
+              Quiet
+            </button>
+            <button
+              type="button"
+              className={`chip${settings.revealAnswersDuringSession ? ' selected' : ''}`}
+              onClick={() => void updateSettings({ revealAnswersDuringSession: true })}
+            >
+              Show right/wrong
+            </button>
+          </div>
+          <span className="faint">
+            Quiet advances without flagging mistakes and reviews them all at the end — less
+            pressure for a cautious solver.
+          </span>
+        </div>
+      </div>
+      <button type="button" className="btn btn-ghost btn-block" onClick={onBack}>
+        Back
+      </button>
+    </div>
+  )
+}

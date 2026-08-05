@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke": "vite build && (vite preview --port 4173 & sleep 3) && node scripts/smoke.mjs",
+    "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
     "idb": "^8.0.3",
@@ -22,6 +24,7 @@
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^4.7.0",
+    "playwright-core": "^1.62.1",
     "typescript": "^5.8.3",
     "vite": "^7.0.6",
     "vite-plugin-pwa": "^1.0.1",

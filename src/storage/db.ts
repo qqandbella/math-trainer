@@ -88,7 +88,7 @@ export async function loadSettings(): Promise<Settings> {
   const merged: Settings = { ...DEFAULT_SETTINGS }
   for (const row of rows) {
     if (row.key in merged) {
-      ;(merged as Record<string, unknown>)[row.key] = row.value
+      ;(merged as unknown as Record<string, unknown>)[row.key] = row.value
     }
   }
   if (!merged.createdAt) merged.createdAt = Date.now()
