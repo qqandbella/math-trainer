@@ -5,6 +5,7 @@ import { useAppState } from '../../app/state'
 import { AnswerPad } from './AnswerPad'
 import { scoreMentalSession, type MentalScore } from '../../core/mental'
 import { curriculum } from '../../curriculum'
+import { saveAttempts } from '../../storage/db'
 
 interface Props {
   spec: SessionSpec
@@ -38,6 +39,7 @@ export function SessionRunner({
   const session = useSession(spec)
   const [flash, setFlash] = useState(false)
   const savedRef = useRef(false)
+  const flushedRef = useRef(0)
 
   const skillsById = useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills])
 
@@ -52,6 +54,48 @@ export function SessionRunner({
         : null,
     [scoreAsMental, session.attempts, skillsById],
   )
+
+  /**
+   * Write each answer to disk as it happens, rather than only at the end.
+   *
+   * A backgrounded tab can be discarded at any moment - iOS is aggressive about
+   * this, and a car ride is exactly when someone switches away - which would
+   * otherwise throw away every problem completed so far. Attempts are immutable
+   * and UUID-keyed, so re-saving them at the end is a harmless no-op.
+   */
+  useEffect(() => {
+    if (!persist) return
+    const pending = session.attempts.slice(flushedRef.current)
+    if (pending.length === 0) return
+    flushedRef.current = session.attempts.length
+    void saveAttempts(pending)
+  }, [session.attempts, persist])
+
+  /**
+   * Flush again the moment the page is hidden. iOS signals `pagehide` /
+   * `visibilitychange` before it discards a backgrounded tab, so this is the
+   * last reliable chance to get in-flight answers onto disk.
+   */
+  const attemptsRef = useRef(session.attempts)
+  attemptsRef.current = session.attempts
+  useEffect(() => {
+    if (!persist) return
+    const flush = (): void => {
+      const pending = attemptsRef.current.slice(flushedRef.current)
+      if (pending.length === 0) return
+      flushedRef.current = attemptsRef.current.length
+      void saveAttempts(pending)
+    }
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [persist])
 
   // Persist exactly once, when the session ends.
   useEffect(() => {
@@ -87,6 +131,7 @@ export function SessionRunner({
 
   const handleRestart = useCallback(() => {
     savedRef.current = false
+    flushedRef.current = 0
     session.restart()
     onRestart?.()
   }, [session, onRestart])

@@ -17,6 +17,7 @@ import {
   loadSettings,
   saveAttempts,
   saveSession,
+  requestPersistentStorage,
   saveSettings,
   type Settings,
 } from '../storage/db'
@@ -58,6 +59,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
 
   useEffect(() => {
     void reload()
+    void requestPersistentStorage()
   }, [reload])
 
   const skills = useMemo(() => {

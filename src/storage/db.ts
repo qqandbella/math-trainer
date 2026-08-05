@@ -69,6 +69,24 @@ function db(): Promise<IDBPDatabase<TrainerDB>> {
   return dbPromise
 }
 
+/**
+ * Asks the browser to exempt this origin from storage eviction.
+ *
+ * iOS Safari clears site data after roughly a week of inactivity, which would
+ * silently erase months of practice history. Installing to the home screen
+ * makes eviction far less likely; this makes it explicit either way. Best
+ * effort - Safari may grant it without prompting, or refuse.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (!navigator.storage?.persist) return false
+  try {
+    if (await navigator.storage.persisted?.()) return true
+    return await navigator.storage.persist()
+  } catch {
+    return false
+  }
+}
+
 export async function saveAttempts(attempts: readonly Attempt[]): Promise<void> {
   if (attempts.length === 0) return
   const database = await db()

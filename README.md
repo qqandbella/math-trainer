@@ -21,6 +21,7 @@ npm test             # unit tests (generator contracts, mastery, TOTP, scoring)
 npm run typecheck
 npm run build        # typecheck + production build into dist/
 npm run smoke        # end-to-end browser test against a preview server
+npm run offline      # cold-start-with-no-network test (install, quit, relaunch offline)
 ```
 
 ## How it works
@@ -125,6 +126,25 @@ sub-path does not affect navigation.
 The service worker is registered with `registerType: 'prompt'` plus an in-app
 "new version is ready" banner. Without that, an installed PWA happily serves a
 cached build forever, and a fix would silently never reach an offline device.
+
+### Working offline
+
+The app is designed to be used with no connectivity at all. `npm run offline`
+verifies this the hard way: it installs the app in a persistent browser profile,
+**fully quits the browser**, relaunches it with the network disabled, and then
+completes a whole session from a cold start.
+
+Three things make that work, and each is checked by that test:
+
+- **No external requests.** No CDN, web font, or analytics call — anything
+  third-party would simply fail once offline. System fonts only.
+- **Answers are written to disk as they happen**, not at the end of the session,
+  with an extra flush on `pagehide` / `visibilitychange`. A backgrounded tab can
+  be discarded at any moment, and without this a half-finished 60-problem
+  session would evaporate.
+- **Persistent storage is requested at startup**, because iOS clears site data
+  after roughly a week of inactivity. Installing to the home screen makes
+  eviction much less likely; `navigator.storage.persist()` makes it explicit.
 
 ## Layout
 
