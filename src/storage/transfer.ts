@@ -1,21 +1,33 @@
-import type { Attempt, SessionRecord } from '../core/types'
+import type { Attempt, Learner, SessionRecord, Tombstone } from '../core/types'
+import { compactTombstones, isDeleted } from '../core/tombstones'
 import {
+  applyTombstonesLocally,
+  deleteTombstones,
   loadAttempts,
+  loadLearners,
   loadSessions,
   loadSettings,
+  loadTombstones,
   saveAttempts,
+  saveLearner,
   saveSession,
   saveSettings,
+  saveTombstones,
   type Settings,
 } from './db'
 
+export const FORMAT_VERSION = 2
+
 export interface ExportBundle {
   app: 'math-trainer'
-  formatVersion: 1
+  formatVersion: number
   exportedAt: number
   deviceLabel: string
+  learners: Learner[]
   attempts: Attempt[]
   sessions: SessionRecord[]
+  /** Deletions travel with the data, or importing this file would undo them. */
+  tombstones: Tombstone[]
   settings: Pick<Settings, 'learnerName' | 'targetOverrides' | 'pauseBudget'>
 }
 
@@ -24,21 +36,29 @@ export interface MergeReport {
   attemptsSkipped: number
   sessionsAdded: number
   sessionsSkipped: number
+  /** Records this device has deliberately erased, and therefore did not restore. */
+  attemptsBlockedByErase: number
+  /** Rows removed here because the file carried a newer deletion. */
+  removedByImportedTombstones: number
 }
 
 export async function buildExport(deviceLabel: string): Promise<ExportBundle> {
-  const [attempts, sessions, settings] = await Promise.all([
+  const [attempts, sessions, settings, tombstones, learners] = await Promise.all([
     loadAttempts(),
     loadSessions(),
     loadSettings(),
+    loadTombstones(),
+    loadLearners(),
   ])
   return {
     app: 'math-trainer',
-    formatVersion: 1,
+    formatVersion: FORMAT_VERSION,
     exportedAt: Date.now(),
     deviceLabel,
+    learners,
     attempts,
     sessions,
+    tombstones,
     settings: {
       learnerName: settings.learnerName,
       targetOverrides: settings.targetOverrides,
@@ -49,7 +69,13 @@ export async function buildExport(deviceLabel: string): Promise<ExportBundle> {
 
 class ImportError extends Error {}
 
-export function parseBundle(text: string): ExportBundle {
+/**
+ * Parses an export file, accepting the v1 format that predates learner scoping
+ * and tombstones. Older files are adopted into the active learner rather than
+ * rejected - refusing to read a backup someone actually made is a poor trade
+ * for a schema detail.
+ */
+export function parseBundle(text: string, activeLearnerId: string): ExportBundle {
   let raw: unknown
   try {
     raw = JSON.parse(text)
@@ -60,9 +86,11 @@ export function parseBundle(text: string): ExportBundle {
   if (!bundle || bundle.app !== 'math-trainer') {
     throw new ImportError('That file was not exported by Math Trainer.')
   }
-  if (bundle.formatVersion !== 1) {
+  if (bundle.formatVersion > FORMAT_VERSION) {
     throw new ImportError(
-      `Unsupported export format v${String(bundle.formatVersion)}; this app reads v1.`,
+      `This file was written by a newer version of the app (format v${String(
+        bundle.formatVersion,
+      )}). Update this device and try again.`,
     )
   }
   if (!Array.isArray(bundle.attempts) || !Array.isArray(bundle.sessions)) {
@@ -73,29 +101,114 @@ export function parseBundle(text: string): ExportBundle {
       throw new ImportError('Export file contains a malformed attempt record.')
     }
   }
-  return bundle
+
+  return {
+    ...bundle,
+    learners: bundle.learners ?? [],
+    tombstones: bundle.tombstones ?? [],
+    attempts: bundle.attempts.map((a) => ({ ...a, learnerId: a.learnerId ?? activeLearnerId })),
+    sessions: bundle.sessions.map((s) => ({ ...s, learnerId: s.learnerId ?? activeLearnerId })),
+  }
 }
 
 /**
- * Merges an export into this device by set-union on record id. Attempts are
- * immutable and UUID-keyed, so importing the same file twice is a no-op and
- * two devices can be merged in either direction with the same result.
+ * Reconciles learner identity across devices.
+ *
+ * Every device mints its own learner id on first run, so the same child has a
+ * different id on the laptop and the tablet. Merging without reconciling would
+ * leave two disjoint histories - and worse, an erase recorded on one device
+ * would not match the other device's records and would silently fail to apply.
+ *
+ * While a device tracks exactly one learner, an incoming bundle is by
+ * definition the same child, so its records are adopted. Once there are
+ * several learners (a later phase) identity must be matched explicitly instead,
+ * because the assumption no longer holds.
  */
-export async function mergeBundle(bundle: ExportBundle): Promise<MergeReport> {
-  const [existingAttempts, existingSessions] = await Promise.all([
-    loadAttempts(),
-    loadSessions(),
-  ])
+function adoptIncomingLearner(
+  bundle: ExportBundle,
+  localLearners: readonly Learner[],
+): ExportBundle {
+  const local = localLearners.length === 1 ? localLearners[0] : undefined
+  if (!local) return bundle
+  return {
+    ...bundle,
+    attempts: bundle.attempts.map((a) => ({ ...a, learnerId: local.id })),
+    sessions: bundle.sessions.map((s) => ({ ...s, learnerId: local.id })),
+    tombstones: bundle.tombstones.map((t) => ({ ...t, learnerId: local.id })),
+  }
+}
+
+export interface MergeOptions {
+  /**
+   * Restore records this device previously erased, by dropping the tombstones
+   * that cover them. Without it, an import cannot undo a deliberate erase.
+   */
+  overrideErasures?: boolean
+}
+
+/**
+ * Merges an export into this device by set union on record id, then applies
+ * every known deletion.
+ *
+ * Union alone is not enough: an older file necessarily predates any erase, so a
+ * plain union would silently restore deleted history. Tombstones are merged
+ * first and then enforced in both directions - incoming records covered by a
+ * local deletion are refused, and local rows covered by an incoming deletion
+ * are removed.
+ */
+export async function mergeBundle(
+  incoming: ExportBundle,
+  options: MergeOptions = {},
+): Promise<MergeReport> {
+  let bundle = incoming
+  const [existingAttempts, existingSessions, existingTombstones, localLearners] =
+    await Promise.all([loadAttempts(), loadSessions(), loadTombstones(), loadLearners()])
+
+  bundle = adoptIncomingLearner(bundle, localLearners)
+
+  let effectiveTombstones = compactTombstones([...existingTombstones, ...bundle.tombstones])
+
+  if (options.overrideErasures) {
+    // Restoring means the deletions themselves have to go; a tombstone that
+    // survives would simply re-erase the records on the next merge.
+    const covering = new Set(
+      effectiveTombstones
+        .filter((t) => bundle.attempts.some((a) => isDeleted(a, [t])))
+        .map((t) => t.id),
+    )
+    effectiveTombstones = effectiveTombstones.filter((t) => !covering.has(t.id))
+    await deleteTombstones([...covering])
+  }
+
+  const newTombstones = bundle.tombstones.filter(
+    (t) => !existingTombstones.some((e) => e.id === t.id),
+  )
+  await saveTombstones(newTombstones)
+  const removed = await applyTombstonesLocally(newTombstones)
+
+  // Only when learner identity was not remapped; otherwise this would create a
+  // duplicate learner alongside the one the records were just adopted into.
+  if (localLearners.length !== 1) {
+    for (const learner of bundle.learners) {
+      await saveLearner(learner)
+    }
+  }
+
   const haveAttempt = new Set(existingAttempts.map((a) => a.id))
   const haveSession = new Set(existingSessions.map((s) => s.id))
 
-  const newAttempts = bundle.attempts.filter((a) => !haveAttempt.has(a.id))
-  const newSessions = bundle.sessions.filter((s) => !haveSession.has(s.id))
+  const candidateAttempts = bundle.attempts.filter((a) => !haveAttempt.has(a.id))
+  const survivingAttempts = candidateAttempts.filter((a) => !isDeleted(a, effectiveTombstones))
+  const blocked = candidateAttempts.length - survivingAttempts.length
 
-  await saveAttempts(newAttempts)
-  for (const session of newSessions) await saveSession(session)
+  const candidateSessions = bundle.sessions.filter((s) => !haveSession.has(s.id))
+  const survivingSessions = candidateSessions.filter(
+    (s) => !isDeleted({ id: s.id, learnerId: s.learnerId, at: s.startedAt }, effectiveTombstones),
+  )
 
-  // Calibration data is a parent setting; merge it rather than overwrite.
+  await saveAttempts(survivingAttempts)
+  for (const session of survivingSessions) await saveSession(session)
+
   if (bundle.settings?.targetOverrides) {
     const current = await loadSettings()
     await saveSettings({
@@ -104,10 +217,12 @@ export async function mergeBundle(bundle: ExportBundle): Promise<MergeReport> {
   }
 
   return {
-    attemptsAdded: newAttempts.length,
-    attemptsSkipped: bundle.attempts.length - newAttempts.length,
-    sessionsAdded: newSessions.length,
-    sessionsSkipped: bundle.sessions.length - newSessions.length,
+    attemptsAdded: survivingAttempts.length,
+    attemptsSkipped: bundle.attempts.length - candidateAttempts.length,
+    sessionsAdded: survivingSessions.length,
+    sessionsSkipped: bundle.sessions.length - candidateSessions.length,
+    attemptsBlockedByErase: blocked,
+    removedByImportedTombstones: removed.attemptsRemoved,
   }
 }
 

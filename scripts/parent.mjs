@@ -138,7 +138,7 @@ try {
   await page.getByText('Export / import').click()
   await page.getByRole('button', { name: 'Erase all practice data' }).click()
   await page.getByRole('button', { name: 'Yes, erase everything' }).click()
-  await page.getByText('All practice data erased.').waitFor({ timeout: 8000 })
+  await page.getByText(/All practice data erased/).waitFor({ timeout: 8000 })
   console.log('ok  erase confirmed (two-step, so it cannot be hit by accident)')
 
   /* --- prove it is really gone, including after a reload ------------------- */

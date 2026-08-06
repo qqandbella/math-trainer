@@ -3,6 +3,8 @@ import type { Attempt, Problem, SessionMode, SessionRecord } from '../core/types
 
 export interface SessionSpec {
   mode: SessionMode
+  /** Whose history this session is recorded against. */
+  learnerId: string
   problems: Problem[]
   /** Timed and mental modes end on the clock rather than on problem count. */
   durationSec?: number
@@ -101,6 +103,7 @@ export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi
 
       const attempt: Attempt = {
         id: newId(),
+        learnerId: spec.learnerId,
         sessionId,
         skillId: problem.skillId,
         prompt: problem.prompt,
@@ -117,7 +120,7 @@ export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi
       setAttempts((prev) => [...prev, attempt])
       return correct
     },
-    [sessionId],
+    [sessionId, spec.learnerId],
   )
 
   const advance = useCallback(() => {
@@ -183,6 +186,7 @@ export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi
     const activeMs = attempts.reduce((sum, a) => sum + a.ms, 0)
     return {
       id: sessionId,
+      learnerId: spec.learnerId,
       mode: spec.mode,
       startedAt,
       endedAt: Date.now(),
@@ -193,7 +197,16 @@ export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi
       pausesUsed,
       completed: isTimed ? true : attempts.length >= spec.problems.length,
     }
-  }, [attempts, sessionId, spec.mode, spec.problems.length, startedAt, pausesUsed, isTimed])
+  }, [
+    attempts,
+    sessionId,
+    spec.mode,
+    spec.learnerId,
+    spec.problems.length,
+    startedAt,
+    pausesUsed,
+    isTimed,
+  ])
 
   return {
     phase,

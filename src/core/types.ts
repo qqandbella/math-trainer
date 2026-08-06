@@ -71,8 +71,41 @@ export interface Problem {
   remainder?: number
 }
 
+export interface Learner {
+  id: string
+  name: string
+  createdAt: number
+}
+
+/**
+ * A deletion, recorded as data rather than as an absence.
+ *
+ * An erase that simply removed rows would be undone the moment history merged
+ * with a device - or an export file - that predates it. Tombstones survive a
+ * union, so a deletion is as durable as the records it removes.
+ */
+export type Tombstone =
+  | {
+      id: string
+      kind: 'purge'
+      learnerId: string
+      /** Everything recorded at or before this instant is gone. */
+      before: number
+      at: number
+      deviceId: string
+    }
+  | {
+      id: string
+      kind: 'record'
+      learnerId: string
+      targetIds: string[]
+      at: number
+      deviceId: string
+    }
+
 export interface Attempt {
   id: string
+  learnerId: string
   sessionId: string
   skillId: string
   prompt: string
@@ -92,6 +125,7 @@ export type SessionMode = 'daily' | 'custom' | 'timed' | 'mental' | 'calibration
 
 export interface SessionRecord {
   id: string
+  learnerId: string
   mode: SessionMode
   startedAt: number
   endedAt: number

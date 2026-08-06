@@ -25,6 +25,7 @@ npm run offline      # cold-start-with-no-network test (install, quit, relaunch 
 npm run parent       # parent gesture, TOTP enrollment, and the erase path
 npm run transfer     # export from one profile, import into another, twice
 npm run qr           # decode the enrollment QR and check it carries the right URL
+npm run migration    # seed a real v1 database and check the upgrade preserves it
 ```
 
 ## How it works
@@ -117,7 +118,24 @@ rejected and that access survives the erase.
 Everything lives in IndexedDB on the device. Attempts are immutable and
 UUID-keyed, so Parent → *Export / import* merges by set-union: importing the
 same file twice is a no-op, and two devices merge to the same result in either
-order. Real cross-device sync is a v1 job, and this shape makes it a small one.
+order. Real cross-device sync is a later job, and this shape makes it a small one
+(see `docs/design/cloud-sync.md`).
+
+**Deletion is recorded, not implied.** A set union has no way to express "this is
+gone", so erasing rows alone would be undone by the next merge with any copy that
+predates the erase — including a backup from last week. Erasing therefore writes
+a *tombstone*, which travels in exports and is enforced on every merge in both
+directions: incoming records covered by a local erase are refused, and local rows
+covered by an imported erase are removed. Because that would otherwise make
+restoring a backup silently do nothing, a blocked import says how many records it
+withheld and offers to restore them anyway.
+
+Practice is scoped to a **learner**. There is one today and no UI for it; the
+scoping exists so that adding a second child later does not require migrating
+history a second time. While a device tracks exactly one learner, an imported
+bundle is adopted into it — different devices mint different learner ids for the
+same child, and without reconciliation an erase from one device would not match
+the other's records.
 
 **Browser account sync does not move this data.** Chrome Sync covers bookmarks,
 history, passwords and open tabs — not IndexedDB, localStorage or Cache Storage.

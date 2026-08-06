@@ -7,6 +7,7 @@ const skillsById = new Map<string, Skill>(mentalSkills.map((s) => [s.id, s]))
 
 function attempt(skillId: string, outcome: 'correct' | 'wrong' | 'skip'): Attempt {
   return {
+    learnerId: 'L',
     id: `${skillId}-${outcome}-${Math.random()}`,
     sessionId: 's',
     skillId,

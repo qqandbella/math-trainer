@@ -47,12 +47,14 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
       scoring: curriculum.scoring,
     }
     const pauseBudget = settings.pauseBudget
+    const learnerId = settings.activeLearnerId
 
     if (mode === 'daily') {
       const preset = curriculum.presets.daily
       const chosen = selectByMix(practicePool, preset.mix, preset.problemCount, ctx)
       return {
         mode: 'daily' as SessionMode,
+        learnerId,
         problems: generateBatch(chosen, rng),
         pauseBudget,
         allowSkip: false,
@@ -64,6 +66,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
       const chosen = selectByMix(practicePool, preset.mix, TIMED_OVERPROVISION, ctx)
       return {
         mode: 'timed' as SessionMode,
+        learnerId,
         problems: generateBatch(chosen, rng),
         durationSec: preset.durationSec,
         pauseBudget,
@@ -75,6 +78,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
       const chosen = selectSkills(mentalSkills, TIMED_OVERPROVISION, ctx)
       return {
         mode: 'mental' as SessionMode,
+        learnerId,
         problems: generateBatch(chosen, rng),
         durationSec: mentalDuration,
         pauseBudget: 1,
@@ -86,6 +90,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
     const chosen = selectByMix(practicePool, mix, customCount, ctx)
     return {
       mode: 'custom' as SessionMode,
+      learnerId,
       problems: generateBatch(chosen, rng),
       pauseBudget,
       allowSkip: false,
@@ -97,6 +102,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
     practicePool,
     mentalSkills,
     settings.pauseBudget,
+    settings.activeLearnerId,
     customOps,
     customCount,
     mentalDuration,

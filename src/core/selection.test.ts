@@ -10,6 +10,7 @@ const NOW = 1_800_000_000_000
 
 function attempt(skillId: string, correct: boolean, ms: number, at = NOW): Attempt {
   return {
+    learnerId: 'L',
     id: `${skillId}-${at}-${ms}`,
     sessionId: 's1',
     skillId,

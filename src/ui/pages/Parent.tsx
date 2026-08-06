@@ -10,7 +10,7 @@ import { SessionRunner } from '../components/SessionRunner'
 import { generateSecret, otpauthUrl, secondsRemaining, verifyTotp } from '../../parent/totp'
 import { QrCode } from '../../parent/QrCode'
 import { buildExport, mergeBundle, parseBundle, shareBundle } from '../../storage/transfer'
-import { clearAllData } from '../../storage/db'
+import { erasePracticeData } from '../../storage/db'
 import type { Attempt } from '../../core/types'
 
 interface Props {
@@ -347,11 +347,12 @@ function Calibration({ onDone }: { onDone(): void }): ReactNode {
     })
     return {
       mode: 'calibration' as const,
+      learnerId: settings.activeLearnerId,
       problems: generateBatch(chosen, rng),
       pauseBudget: 1,
       allowSkip: false,
     }
-  }, [practicePool, stats])
+  }, [practicePool, stats, settings.activeLearnerId])
 
   const handleComplete = useCallback((attempts: Attempt[]) => {
     const bySkill = new Map<string, number[]>()
@@ -451,10 +452,12 @@ function Calibration({ onDone }: { onDone(): void }): ReactNode {
 /* -------------------------------------------------------------- data i/o */
 
 function DataPanel({ onBack }: { onBack(): void }): ReactNode {
-  const { reload, attempts, sessions } = useAppState()
+  const { reload, attempts, sessions, settings } = useAppState()
   const [status, setStatus] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const [confirmingReset, setConfirmingReset] = useState(false)
+  /** Held so a blocked restore can be retried without re-picking the file. */
+  const [blockedFile, setBlockedFile] = useState<{ text: string; count: number } | null>(null)
 
   const doExport = useCallback(async () => {
     const bundle = await buildExport(navigator.userAgent.includes('iPad') ? 'iPad' : 'computer')
@@ -466,20 +469,38 @@ function DataPanel({ onBack }: { onBack(): void }): ReactNode {
     )
   }, [])
 
-  const doImport = useCallback(
-    async (file: File) => {
+  const runImport = useCallback(
+    async (text: string, overrideErasures: boolean) => {
       try {
-        const report = await mergeBundle(parseBundle(await file.text()))
+        const bundle = parseBundle(text, settings.activeLearnerId)
+        const report = await mergeBundle(bundle, { overrideErasures })
         await reload()
-        setStatus(
+
+        const parts = [
           `Merged: ${report.attemptsAdded} new attempts (${report.attemptsSkipped} already here), ` +
             `${report.sessionsAdded} new sessions.`,
-        )
+        ]
+        if (report.removedByImportedTombstones > 0) {
+          parts.push(
+            `${report.removedByImportedTombstones} removed here because the file recorded an erase.`,
+          )
+        }
+        if (report.attemptsBlockedByErase > 0) {
+          // Silently dropping them would look like the import simply failed.
+          parts.push(
+            `${report.attemptsBlockedByErase} were left out because they were erased on this device.`,
+          )
+          setBlockedFile({ text, count: report.attemptsBlockedByErase })
+        } else {
+          setBlockedFile(null)
+        }
+        setStatus(parts.join(' '))
       } catch (error) {
+        setBlockedFile(null)
         setStatus(error instanceof Error ? error.message : 'Import failed.')
       }
     },
-    [reload],
+    [reload, settings.activeLearnerId],
   )
 
   return (
@@ -508,11 +529,20 @@ function DataPanel({ onBack }: { onBack(): void }): ReactNode {
           style={{ display: 'none' }}
           onChange={(e) => {
             const file = e.target.files?.[0]
-            if (file) void doImport(file)
+            if (file) void file.text().then((text) => runImport(text, false))
             e.target.value = ''
           }}
         />
         {status && <p className="faint" style={{ margin: 0 }}>{status}</p>}
+        {blockedFile && (
+          <button
+            type="button"
+            className="btn btn-block"
+            onClick={() => void runImport(blockedFile.text, true)}
+          >
+            Restore the {blockedFile.count} erased anyway
+          </button>
+        )}
       </div>
 
       <div className="card stack">
@@ -520,17 +550,23 @@ function DataPanel({ onBack }: { onBack(): void }): ReactNode {
         {confirmingReset ? (
           <>
             <p className="muted" style={{ margin: 0 }}>
-              This erases every attempt and session on this device. Export first if you want
-              a copy.
+              This erases every attempt and session on this device, and records the erase so
+              that importing an older backup will not quietly bring it back. Export first if
+              you want a copy.
             </p>
             <button
               type="button"
               className="btn btn-danger btn-block"
               onClick={() => {
-                void clearAllData().then(reload).then(() => {
-                  setConfirmingReset(false)
-                  setStatus('All practice data erased.')
-                })
+                void erasePracticeData(settings.activeLearnerId, settings.deviceId)
+                  .then(async (result) => {
+                    await reload()
+                    setConfirmingReset(false)
+                    setBlockedFile(null)
+                    setStatus(
+                      `All practice data erased (${result.attemptsRemoved} attempts).`,
+                    )
+                  })
               }}
             >
               Yes, erase everything

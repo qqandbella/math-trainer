@@ -8,6 +8,7 @@
  *   node scripts/transfer.mjs [url]
  */
 import { chromium } from 'playwright-core'
+import { createHmac as createHmacSync } from 'node:crypto'
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -54,6 +55,28 @@ async function openParent(page) {
   await page.mouse.move(box.x + box.width / 2 + 6, box.y + box.height / 2 + 5)
   await page.waitForTimeout(1900)
   await page.mouse.up()
+}
+
+function totpFor(secret) {
+  const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  const bytes = []
+  let bits = 0
+  let value = 0
+  for (const ch of secret) {
+    value = (value << 5) | B32.indexOf(ch)
+    bits += 5
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff)
+      bits -= 8
+    }
+  }
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 1000 / 30)))
+  const d = createHmacSync('sha1', Buffer.from(bytes)).update(counter).digest()
+  const o = d[d.length - 1] & 0x0f
+  const bin =
+    ((d[o] & 0x7f) << 24) | ((d[o + 1] & 0xff) << 16) | ((d[o + 2] & 0xff) << 8) | (d[o + 3] & 0xff)
+  return String(bin % 1e6).padStart(6, '0')
 }
 
 let ctxA
@@ -200,6 +223,38 @@ try {
     fail(`device B reports do not show the imported work: "${totals.replace(/\n/g, ' ')}"`)
   }
   console.log(`ok  device B Progress shows all ${SOLVE} imported problems after reload`)
+
+  /* --- an erase must not be undone by re-importing an older backup -------- */
+  await b.goto(`${APP_URL}#/`, { waitUntil: 'domcontentloaded' })
+  await openParent(b)
+  await b.locator('input[inputmode="numeric"]').first().fill(totpFor(secretB))
+  await b.getByRole('button', { name: 'Unlock' }).click()
+  await b.getByRole('heading', { name: 'Parent', exact: true }).waitFor({ timeout: 5000 })
+  await b.getByText('Export / import').click()
+  await b.getByRole('button', { name: 'Erase all practice data' }).click()
+  await b.getByRole('button', { name: 'Yes, erase everything' }).click()
+  await b.getByText(/All practice data erased/).waitFor({ timeout: 8000 })
+  console.log('ok  device B erased its history')
+
+  await b.locator('input[type=file]').setInputFiles(exportPath)
+  await b.getByText(/were left out because they were erased/).waitFor({ timeout: 10000 })
+  const blocked = await b.locator('.faint').filter({ hasText: 'Merged:' }).innerText()
+  if (!blocked.includes(`${SOLVE} were left out`)) {
+    fail(`erase was not enforced on import: "${blocked.trim()}"`)
+  }
+  console.log(`ok  re-importing the pre-erase backup did NOT resurrect data: ${blocked.trim()}`)
+
+  /* --- but an explicit restore still works -------------------------------- */
+  await b.getByRole('button', { name: /Restore the \d+ erased anyway/ }).click()
+  await b.waitForTimeout(1200)
+  await b.goto(`${APP_URL}#/`, { waitUntil: 'domcontentloaded' })
+  await b.reload({ waitUntil: 'networkidle' })
+  await b.getByText('Progress').first().click()
+  const restored = await b.locator('.stat-row').first().innerText()
+  if (!restored.includes(String(SOLVE))) {
+    fail(`explicit restore did not bring the data back: "${restored.replace(/\n/g, ' ')}"`)
+  }
+  console.log(`ok  an explicit restore brings all ${SOLVE} back`)
 
   console.log('\nTRANSFER VERIFIED — export/import moves history between devices, safely repeatable')
 } finally {
