@@ -34,8 +34,7 @@ transfer, which means in practice it will not happen.
 - **Learner** — a child whose practice history is tracked. Not an auth identity.
 - **Device** — one browser profile on one machine. Identified by a locally
   generated UUID, not by the user agent.
-- **Batch** — an immutable document holding the attempts a device recorded since
-  its last push.
+- **Cursor** — the point in server-time up to which a device has already pulled.
 
 ## Proposal Overview
 
@@ -48,9 +47,10 @@ Four decisions carry the design:
 2. **Deletion is data.** An erase writes a *tombstone*, not an absence. This is
    the only way a delete survives a union with a device that was offline when it
    happened.
-3. **Writes are batched, and reads are incremental.** Attempts are grouped into
-   batch documents and pulled from a cursor. This is about read amplification,
-   not write cost — see *Cost Model*.
+3. **Reads are incremental.** Every device keeps a cursor and pulls only what it
+   has not seen. The cursor — not any batching scheme — is what keeps cost flat
+   as history grows. One document per attempt, keyed by the attempt's own UUID,
+   makes pushing idempotent with no mutable bookkeeping.
 4. **Local storage stays the source of truth.** The sync layer is an adapter
    behind a narrow interface. The app never blocks on the network, and swapping
    the backend later does not touch the merge logic.
@@ -61,8 +61,8 @@ flowchart LR
         UI[Practice UI] --> IDB[(IndexedDB<br/>source of truth)]
         IDB <--> Engine[Sync engine]
     end
-    Engine -->|push new batches| FS[(Firestore)]
-    FS -->|pull batches + tombstones<br/>since cursor| Engine
+    Engine -->|push unsynced records| FS[(Firestore)]
+    FS -->|pull records + tombstones<br/>since cursor| Engine
     Auth[Firebase Auth] -.identity.-> Engine
 ```
 
@@ -73,13 +73,13 @@ sequenceDiagram
     participant A as Device A
     participant F as Firestore
     participant B as Device B
-    A->>F: create batch {deviceId: A, attempts[...]}
-    B->>F: create batch {deviceId: B, attempts[...]}
-    B->>F: read batches where createdAt > cursorB
-    F-->>B: batch from A
+    A->>F: set attempts, keyed by attempt id
+    B->>F: set attempts, keyed by attempt id
+    B->>F: read where syncedAt > cursorB
+    F-->>B: A's attempts
     Note over B: union into IndexedDB,<br/>apply tombstone filter
     A->>F: create tombstone {kind: purge, before: T}
-    B->>F: read tombstones where createdAt > cursorB
+    B->>F: read tombstones where syncedAt > cursorB
     F-->>B: purge T
     Note over B: drop attempts with at <= T
 ```
@@ -108,10 +108,12 @@ households/{householdId}/learners/{learnerId}
   name, createdAt
   targetOverrides: { <skillId>: seconds }   // calibrated reference times
 
-households/{householdId}/learners/{learnerId}/batches/{batchId}
-  deviceId, createdAt (server timestamp)
-  attempts: [ Attempt, ... ]                // immutable
-  sessions: [ SessionRecord, ... ]
+households/{householdId}/learners/{learnerId}/attempts/{attemptId}
+  ...Attempt fields, deviceId
+  syncedAt: <server timestamp>              // cursor ordering only
+
+households/{householdId}/learners/{learnerId}/sessions/{sessionId}
+  ...SessionRecord fields, deviceId, syncedAt
 
 households/{householdId}/learners/{learnerId}/tombstones/{tombstoneId}
   kind: "purge" | "record"
@@ -120,23 +122,32 @@ households/{householdId}/learners/{learnerId}/tombstones/{tombstoneId}
   createdAt, deviceId
 ```
 
-Batches cap at 500 attempts to stay well under Firestore's 1 MiB document limit
-(~200 bytes per attempt gives roughly 100 KiB at the cap).
+The document id **is** the attempt's local UUID. That single choice removes a
+whole class of bug: a push is `set(attemptId, attempt)`, so a retried, duplicated,
+or interrupted push converges to the same state with no deduplication logic and no
+high-water mark to corrupt.
 
 Local IndexedDB gains a `learnerId` on every attempt and session, plus two new
-stores: `tombstones` and `syncState` (per learner: pull cursor, last pushed
-attempt id, device id).
+stores: `tombstones` and `syncState` (per learner: pull cursor and device id).
 
 ### Sync protocol
 
-**Push.** Collect attempts not yet pushed, write one batch document, advance the
-local high-water mark. A failed push leaves the mark unchanged and retries; a
-duplicated push is harmless because ids are stable and the merge is idempotent.
+**Push.** Write any locally-unsynced attempts as documents keyed by their own id,
+in chunks of up to 500 via `writeBatch` (an atomicity and round-trip convenience,
+not a storage layout). Because the id is the payload's id, a push is idempotent:
+interrupted, retried, or duplicated pushes all converge. A local `synced` flag is
+an optimization to avoid re-sending, never a correctness requirement — losing it
+costs bandwidth, not data.
 
-**Pull.** Query `batches` and `tombstones` where `createdAt > cursor`, ordered by
-`createdAt`. Union into IndexedDB via the existing merge, apply tombstones, then
-advance the cursor. Because documents are never updated, a cursor over creation
-time cannot miss anything.
+**Pull.** Query `attempts`, `sessions`, and `tombstones` where
+`syncedAt > cursor - overlap`, ordered by `syncedAt`. Union into IndexedDB, apply
+tombstones, advance the cursor.
+
+The `overlap` deserves explanation: a document committed concurrently can land
+with a server timestamp marginally behind a cursor the reader has already passed,
+which would leave it permanently unseen. Re-reading a trailing window (five
+minutes) closes that gap. It is safe precisely because the merge is idempotent —
+re-reading costs a few reads and changes nothing.
 
 **Trigger points.** App open, session end, and on regaining connectivity. No
 polling.
@@ -169,8 +180,11 @@ correctly, which is the more likely one.
 Rules enforce three invariants:
 
 - A household is readable and writable only by its members.
-- `batches` and `tombstones` allow `create` but never `update` or `delete`.
-  History is append-only at the server, not merely by client convention.
+- `attempts`, `sessions` and `tombstones` allow `create` but never `update` or
+  `delete`. History is append-only at the server, not merely by client
+  convention. Note this means a client cannot overwrite an existing attempt id,
+  so idempotent re-pushes must tolerate a permission error on records the server
+  already holds.
 - A user may add themselves to `members` only if their verified email appears in
   `invitedEmails`.
 
@@ -186,15 +200,35 @@ supports via per-device labels.
 
 Attempt records are ~200 bytes. Sixty problems a day is ~4.4 MB per learner-year.
 
-| Firestore Spark quota | Limit | Realistic use (one household) |
+| Firestore Spark quota | Limit | Steady state (one household, 3 devices) |
 |---|---|---|
 | Storage | 1 GB | ~4 MB / learner-year |
-| Writes / day | 20,000 | ~5 (batched pushes) |
-| Reads / day | 50,000 | ~10 (cursor-based) |
+| Writes / day | 20,000 | ~60 (one per attempt) |
+| Reads / day | 50,000 | ~180 (60 new attempts x 3 devices) |
 
-The read column is the one that would break under a naive design: one document
-per attempt plus a full re-read on every open would be tens of thousands of reads
-per day. Batching plus cursors keeps it flat regardless of history size.
+Steady-state cost depends on *daily volume*, not accumulated history, because
+every device reads from a cursor. Practising twice as much, on twice as many
+devices, is still under 1% of quota.
+
+The one case that scales with history is **cold start** — a new device pulling
+everything:
+
+| History | Cold-start reads |
+|---|---|
+| 1 year (~22k attempts) | ~22,000 |
+| 2 years | ~44,000 |
+| 5 years | ~110,000 — exceeds the 50,000/day quota |
+
+A device added to a multi-year history would fail to complete its first sync. The
+fix is compaction — periodically folding old attempts into snapshot documents of
+~500 records each, reducing a five-year cold start to a few hundred reads — and it
+can be added later without changing the protocol, since a snapshot is just another
+immutable document. Building it now would be optimising for a problem that is
+years away and may never arrive.
+
+Staying on the Spark plan means the system **cannot generate a bill** — it fails
+closed when a quota is exhausted rather than billing. That is a deliberate choice
+over Blaze's smoother degradation.
 
 Staying on the Spark plan means the system **cannot generate a bill** — it fails
 closed when a quota is exhausted rather than billing. That is a deliberate choice
@@ -252,11 +286,17 @@ renewed silently while the provider session is alive; Safari's tracking preventi
 can break this, producing periodic re-sign-in prompts on tablets. Sync must treat
 an expired token as "offline" and never interrupt practice.
 
-**Sync bugs are data-loss bugs.** Append-only plus idempotent merges make the
-failure modes mild — the plausible failure is stale data, not lost data — but the
-push high-water mark is the one piece of mutable state and therefore the one place
-a bug could drop records. It needs direct test coverage, including interrupted
-pushes.
+**Sync bugs are data-loss bugs.** Append-only writes keyed by the record's own id
+make the failure modes mild: the plausible failure is stale data, not lost data,
+and there is no mutable server-side bookkeeping to corrupt. The remaining sharp
+edge is the pull cursor — advancing it past unread documents would lose them
+silently — which is why it carries an overlap window and needs direct test
+coverage, including interrupted pulls and concurrent writes from two devices.
+
+**Cold-start read cost is a cliff, not a curve.** Deferred by design, but a device
+added to a several-year history fails its first sync outright rather than
+degrading gracefully. Compaction needs to exist before that point is reachable,
+and the trigger is measurable in advance: total attempts approaching ~40,000.
 
 **Public repository.** Firebase client config is public by design; the security
 rules are the boundary, so they must be tested rather than assumed. Rules unit
