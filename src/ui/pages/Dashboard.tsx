@@ -9,6 +9,7 @@ import {
 import { useAppState } from '../../app/state'
 import type { RouteName } from '../../app/router'
 import { curriculum } from '../../curriculum'
+import { relativeTime } from './SyncPage'
 
 interface Props {
   navigate(route: RouteName): void
@@ -34,7 +35,7 @@ function computeStreak(sessionDays: Set<string>): number {
 }
 
 export function Dashboard({ navigate }: Props): ReactNode {
-  const { sessions, attempts, settings } = useAppState()
+  const { sessions, attempts, settings, sync } = useAppState()
   const holdTimer = useRef<number | null>(null)
   const [holding, setHolding] = useState(false)
 
@@ -96,7 +97,20 @@ export function Dashboard({ navigate }: Props): ReactNode {
         >
           Math Trainer
         </h1>
-        {name && <span className="muted">{name}</span>}
+        <div className="row" style={{ gap: 8 }}>
+          {name && <span className="muted">{name}</span>}
+          <button
+            type="button"
+            className={`pill${sync.account ? ' good' : ''}`}
+            onClick={() => navigate('sync')}
+          >
+            {sync.busy
+              ? 'syncing…'
+              : sync.account
+                ? `synced ${relativeTime(sync.lastSyncedAt)}`
+                : 'sign in to sync'}
+          </button>
+        </div>
       </div>
 
       <div className="card">

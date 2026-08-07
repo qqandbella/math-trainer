@@ -220,7 +220,7 @@ function Enrollment({
 
 /* ----------------------------------------------------------- parent home */
 
-type Panel = 'menu' | 'calibrate' | 'data' | 'settings' | 'sync'
+type Panel = 'menu' | 'calibrate' | 'data' | 'settings'
 
 function ParentHome({ navigate }: Props): ReactNode {
   const [panel, setPanel] = useState<Panel>('menu')
@@ -228,7 +228,6 @@ function ParentHome({ navigate }: Props): ReactNode {
   if (panel === 'calibrate') return <Calibration onDone={() => setPanel('menu')} />
   if (panel === 'data') return <DataPanel onBack={() => setPanel('menu')} />
   if (panel === 'settings') return <SettingsPanel onBack={() => setPanel('menu')} />
-  if (panel === 'sync') return <SyncPanel onBack={() => setPanel('menu')} />
 
   return (
     <div className="stack">
@@ -251,10 +250,6 @@ function ParentHome({ navigate }: Props): ReactNode {
           <span className="muted">
             Run {CALIBRATION_COUNT} problems yourself; your speed becomes the 100 mark
           </span>
-        </button>
-        <button type="button" className="mode-card" onClick={() => setPanel('sync')}>
-          <span className="title">Sync across devices</span>
-          <span className="muted">Sign in with Google to keep every device in step</span>
         </button>
         <button type="button" className="mode-card" onClick={() => setPanel('data')}>
           <span className="title">Export / import</span>
@@ -454,73 +449,6 @@ function Calibration({ onDone }: { onDone(): void }): ReactNode {
           Back
         </button>
       </div>
-    </div>
-  )
-}
-
-/* ----------------------------------------------------------------- sync */
-
-function SyncPanel({ onBack }: { onBack(): void }): ReactNode {
-  const { sync, signInToSync, signOutOfSyncing, runSync, attempts } = useAppState()
-
-  return (
-    <div className="stack">
-      <h1>Sync across devices</h1>
-      <div className="card stack">
-        {sync.account ? (
-          <>
-            <p className="muted" style={{ margin: 0 }}>
-              Signed in as <strong>{sync.account.email ?? sync.account.uid}</strong>. Practice
-              on any signed-in device and history converges on its own.
-            </p>
-            <p className="faint" style={{ margin: 0 }}>
-              {attempts.length} attempts on this device.
-            </p>
-            <button
-              type="button"
-              className="btn btn-primary btn-block"
-              disabled={sync.busy}
-              onClick={() => void runSync()}
-            >
-              {sync.busy ? 'Syncing…' : 'Sync now'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-block"
-              onClick={() => void signOutOfSyncing()}
-            >
-              Sign out
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="muted" style={{ margin: 0 }}>
-              Signing in keeps this device in step with your others. Practice history is
-              stored under your own Google account and is never shared.
-            </p>
-            <p className="faint" style={{ margin: 0 }}>
-              Everything keeps working offline either way — sync only runs when there is a
-              connection, and never interrupts a session.
-            </p>
-            <button
-              type="button"
-              className="btn btn-primary btn-block"
-              disabled={sync.busy}
-              onClick={() => void signInToSync()}
-            >
-              {sync.busy ? 'Opening…' : 'Sign in with Google'}
-            </button>
-          </>
-        )}
-        {sync.message && (
-          <p className="faint" style={{ margin: 0 }}>
-            {sync.message}
-          </p>
-        )}
-      </div>
-      <button type="button" className="btn btn-ghost btn-block" onClick={onBack}>
-        Back
-      </button>
     </div>
   )
 }

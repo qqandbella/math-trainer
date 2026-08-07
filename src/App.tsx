@@ -5,6 +5,7 @@ import { useAppState } from './app/state'
 import { Dashboard } from './ui/pages/Dashboard'
 import { PracticePage } from './ui/pages/PracticePage'
 import { Reports } from './ui/pages/Reports'
+import { SyncPage } from './ui/pages/SyncPage'
 import { Parent } from './ui/pages/Parent'
 
 /**
@@ -55,6 +56,7 @@ export function App(): ReactNode {
         <PracticePage mode={route} navigate={navigate} />
       )}
       {route === 'reports' && <Reports navigate={navigate} />}
+      {route === 'sync' && <SyncPage navigate={navigate} />}
       {route === 'parent' && <Parent navigate={navigate} />}
       <UpdateBanner />
     </div>

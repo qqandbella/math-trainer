@@ -20,18 +20,20 @@ import type { LocalStore } from './types'
  * arrived *from* the backend, and re-queueing it would make each device
  * republish whatever it just received.
  */
-export const indexedDbStore: LocalStore = {
-  loadAttempts,
-  loadSessions,
-  loadTombstones,
-  saveAttempts: (attempts) => saveAttempts(attempts),
-  saveSessions: (sessions) => saveSessions(sessions),
-  saveTombstones: (tombstones) => saveTombstones(tombstones),
-  applyTombstones: async (tombstones) => {
-    await applyTombstonesLocally(tombstones)
-  },
-  outbox: (learnerId) => outboxIds(learnerId),
-  clearOutbox: (_learnerId, ids) => clearOutbox(ids),
-  getCursor: (learnerId) => getSyncCursor(learnerId),
-  setCursor: (learnerId, cursor) => setSyncCursor(learnerId, cursor),
+export function createIndexedDbStore(accountUid: string): LocalStore {
+  return {
+    loadAttempts,
+    loadSessions,
+    loadTombstones,
+    saveAttempts: (attempts) => saveAttempts(attempts),
+    saveSessions: (sessions) => saveSessions(sessions),
+    saveTombstones: (tombstones) => saveTombstones(tombstones),
+    applyTombstones: async (tombstones) => {
+      await applyTombstonesLocally(tombstones)
+    },
+    outbox: (learnerId) => outboxIds(learnerId),
+    clearOutbox: (_learnerId, ids) => clearOutbox(ids),
+    getCursor: (learnerId) => getSyncCursor(accountUid, learnerId),
+    setCursor: (learnerId, cursor) => setSyncCursor(accountUid, learnerId, cursor),
+  }
 }

@@ -26,6 +26,8 @@ export interface SyncStatus {
   account: { uid: string; email: string | null } | null
   busy: boolean
   message: string
+  lastSyncedAt: number | null
+  enabled: boolean
 }
 
 interface AppState {
@@ -58,7 +60,13 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
   const [attempts, setAttempts] = useState<Attempt[]>([])
   const [sessions, setSessions] = useState<SessionRecord[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
-  const [sync, setSync] = useState<SyncStatus>({ account: null, busy: false, message: '' })
+  const [sync, setSync] = useState<SyncStatus>({
+    account: null,
+    busy: false,
+    message: '',
+    lastSyncedAt: null,
+    enabled: false,
+  })
 
   const reload = useCallback(async () => {
     const [a, s, cfg] = await Promise.all([loadAttempts(), loadSessions(), loadSettings()])
@@ -80,7 +88,12 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
     const { syncNow, describeSync } = await import('../sync/syncNow')
     const result = await syncNow(learnerId)
     await reload()
-    setSync((s) => ({ ...s, busy: false, message: describeSync(result) }))
+    setSync((s) => ({
+      ...s,
+      busy: false,
+      message: describeSync(result),
+      lastSyncedAt: result.status === 'ok' ? Date.now() : s.lastSyncedAt,
+    }))
   }, [settings.activeLearnerId, reload])
 
   const signInToSync = useCallback(async () => {
@@ -89,9 +102,24 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       const { signIn } = await import('../sync/auth')
       const account = await signIn()
       if (account) {
-        await saveSettings({ syncEnabled: true })
-        setSettings((prev) => ({ ...prev, syncEnabled: true }))
-        setSync((s) => ({ ...s, account, busy: false }))
+        const previous = settings.syncAccountUid
+        const switched = previous !== '' && previous !== account.uid
+        let note = ''
+        if (switched && settings.activeLearnerId) {
+          // The outbox was emptied when this data went to the previous account,
+          // so without re-queueing, the new account would receive nothing and
+          // this device would look healthy while syncing in neither direction.
+          const { requeueEverything } = await import('../storage/db')
+          const count = await requeueEverything(settings.activeLearnerId)
+          note = `Switched account — queued ${count} local records to upload here.`
+        }
+        await saveSettings({ syncEnabled: true, syncAccountUid: account.uid })
+        setSettings((prev) => ({
+          ...prev,
+          syncEnabled: true,
+          syncAccountUid: account.uid,
+        }))
+        setSync((s) => ({ ...s, account, busy: false, enabled: true, message: note }))
       } else {
         setSync((s) => ({ ...s, busy: false }))
       }
@@ -109,11 +137,27 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
     await signOutOfSync()
     await saveSettings({ syncEnabled: false })
     setSettings((prev) => ({ ...prev, syncEnabled: false }))
-    setSync({ account: null, busy: false, message: 'Signed out. Data stays on this device.' })
+    setSync({
+      account: null,
+      busy: false,
+      message: 'Signed out. Practice history stays on this device.',
+      lastSyncedAt: null,
+      enabled: false,
+    })
   }, [])
+
+  // Sync again as soon as connectivity returns, so a device that practised on a
+  // flaky connection does not sit on unsent work until it is next opened.
+  useEffect(() => {
+    if (!settings.syncEnabled) return
+    const onOnline = (): void => void runSync()
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [settings.syncEnabled, runSync])
 
   // Only devices that have opted into sync ever load the Firebase SDK.
   useEffect(() => {
+    setSync((s) => ({ ...s, enabled: settings.syncEnabled }))
     if (!ready || !settings.syncEnabled) return
     let dispose: (() => void) | undefined
     void (async () => {
@@ -147,8 +191,11 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       ])
       setSessions((prev) => [...prev, session])
       setAttempts((prev) => [...prev, ...newAttempts])
+      // Publish immediately rather than waiting for the next app open: a
+      // finished session is exactly when there is new work worth sending.
+      if (settings.syncEnabled) void runSync()
     },
-    [],
+    [settings.syncEnabled, runSync],
   )
 
   const updateSettings = useCallback(async (patch: Partial<Settings>) => {

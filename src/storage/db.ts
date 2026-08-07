@@ -19,6 +19,8 @@ export interface Settings {
   deviceId: string
   /** Which learner new practice is recorded against. */
   activeLearnerId: string
+  /** The account this device last synced with, to detect a switch. */
+  syncAccountUid: string
   /**
    * Whether this device has ever signed in to sync. Gates loading the Firebase
    * SDK at all, so a device that never syncs never downloads it.
@@ -36,6 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   parentTotpSecret: null,
   deviceId: '',
   activeLearnerId: '',
+  syncAccountUid: '',
   syncEnabled: false,
   createdAt: 0,
 }
@@ -231,12 +234,52 @@ export async function clearOutbox(ids: readonly string[]): Promise<void> {
   await tx.done
 }
 
-export async function getSyncCursor(learnerId: string): Promise<number> {
-  return (await (await db()).get('syncState', learnerId))?.cursor ?? 0
+/**
+ * Cursors are per account AND per learner.
+ *
+ * A cursor is a position in one account's server timeline. Reusing it against a
+ * different account would ask for "everything after a point that account never
+ * reached", silently skipping that account's entire history.
+ */
+function cursorKey(accountUid: string, learnerId: string): string {
+  return `${accountUid}:${learnerId}`
 }
 
-export async function setSyncCursor(learnerId: string, cursor: number): Promise<void> {
-  await (await db()).put('syncState', { learnerId, cursor })
+export async function getSyncCursor(accountUid: string, learnerId: string): Promise<number> {
+  return (await (await db()).get('syncState', cursorKey(accountUid, learnerId)))?.cursor ?? 0
+}
+
+export async function setSyncCursor(
+  accountUid: string,
+  learnerId: string,
+  cursor: number,
+): Promise<void> {
+  await (await db()).put('syncState', {
+    learnerId: cursorKey(accountUid, learnerId),
+    cursor,
+  })
+}
+
+/**
+ * Queues every local record for publication.
+ *
+ * Used when this device starts syncing with a different account: the outbox was
+ * emptied when the data went to the previous one, so without this the new
+ * account would never receive anything this device already holds.
+ */
+export async function requeueEverything(learnerId: string): Promise<number> {
+  const [attempts, sessions, tombstones] = await Promise.all([
+    loadAttempts(),
+    loadSessions(),
+    loadTombstones(),
+  ])
+  const records = [
+    ...attempts.filter((a) => a.learnerId === learnerId).map((a) => ({ id: a.id, learnerId })),
+    ...sessions.filter((s) => s.learnerId === learnerId).map((s) => ({ id: s.id, learnerId })),
+    ...tombstones.filter((t) => t.learnerId === learnerId).map((t) => ({ id: t.id, learnerId })),
+  ]
+  await enqueueForSync(records)
+  return records.length
 }
 
 export async function loadAttempts(): Promise<Attempt[]> {

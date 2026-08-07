@@ -7,9 +7,19 @@ export type RouteName =
   | 'timed'
   | 'mental'
   | 'reports'
+  | 'sync'
   | 'parent'
 
-const ROUTES: RouteName[] = ['home', 'daily', 'custom', 'timed', 'mental', 'reports', 'parent']
+const ROUTES: RouteName[] = [
+  'home',
+  'daily',
+  'custom',
+  'timed',
+  'mental',
+  'reports',
+  'sync',
+  'parent',
+]
 
 function parse(hash: string): RouteName {
   const name = hash.replace(/^#\/?/, '').split('?')[0] ?? ''

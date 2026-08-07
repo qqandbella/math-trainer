@@ -1,6 +1,6 @@
 import { syncOnce } from './engine'
 import { createFirestoreBackend } from './firestoreBackend'
-import { indexedDbStore } from './localStore'
+import { createIndexedDbStore } from './localStore'
 import { getFirebase } from './auth'
 import type { SyncResult } from './types'
 
@@ -28,7 +28,7 @@ export async function syncNow(learnerId: string): Promise<SyncResult> {
     }
   }
   const backend = createFirestoreBackend(db, user.uid)
-  return syncOnce(learnerId, backend, indexedDbStore)
+  return syncOnce(learnerId, backend, createIndexedDbStore(user.uid))
 }
 
 export function describeSync(result: SyncResult): string {

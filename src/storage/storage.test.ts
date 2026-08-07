@@ -284,3 +284,29 @@ describe('import compatibility', () => {
     expect(await loadAttempts()).toHaveLength(1)
   })
 })
+
+describe('switching sync account', () => {
+  it('keeps cursors separate per account', async () => {
+    const { getSyncCursor, setSyncCursor } = await import('./db')
+    await setSyncCursor('accountA', 'L1', 5000)
+    expect(await getSyncCursor('accountA', 'L1')).toBe(5000)
+    // A position from A's timeline must not be applied to B, or B's older
+    // records would be skipped entirely.
+    expect(await getSyncCursor('accountB', 'L1')).toBe(0)
+  })
+
+  it('re-queues everything so a new account receives this device history', async () => {
+    const { requeueEverything, outboxIds, clearOutbox } = await import('./db')
+    const { activeLearnerId } = await loadSettings()
+    await saveAttempts([attempt('a1', activeLearnerId), attempt('a2', activeLearnerId)])
+    await saveSession(session('s1', activeLearnerId))
+
+    // Simulate a completed push to the first account.
+    await clearOutbox(await outboxIds(activeLearnerId))
+    expect(await outboxIds(activeLearnerId)).toHaveLength(0)
+
+    const queued = await requeueEverything(activeLearnerId)
+    expect(queued).toBe(3)
+    expect((await outboxIds(activeLearnerId)).sort()).toEqual(['a1', 'a2', 's1'])
+  })
+})

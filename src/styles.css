@@ -439,6 +439,11 @@ h3 {
   color: var(--ink-soft);
 }
 
+.pill {
+  border: none;
+  font-family: inherit;
+}
+
 .pill.good {
   background: var(--good-soft);
   color: var(--good);
