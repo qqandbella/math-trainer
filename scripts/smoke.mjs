@@ -34,7 +34,7 @@ const page = await browser.newPage({ viewport: { width: 900, height: 1000 } })
 page.on('pageerror', (error) => fail(`uncaught page error: ${error.message}`))
 
 try {
-  await page.goto(URL, { waitUntil: 'networkidle' })
+  await page.goto(URL, { waitUntil: 'domcontentloaded' })
 
   if (!(await page.locator('.app-title').isVisible())) fail('dashboard did not render')
   console.log('ok  dashboard rendered')
@@ -112,7 +112,7 @@ try {
   await page.locator('.app-title').waitFor()
 
   // Reload to prove the data came back out of IndexedDB, not React state.
-  await page.reload({ waitUntil: 'networkidle' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
   await page.getByText('Progress').first().click()
   await page.getByRole('heading', { name: 'Progress' }).waitFor()
 

@@ -93,7 +93,7 @@ try {
   console.log(`ok  seeded an authentic v1 database with ${seeded} attempts`)
 
   // Now let the app open it and run the migration for real.
-  await page.goto(APP_URL, { waitUntil: 'networkidle' })
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await page.locator('.app-title').waitFor({ timeout: 15000 })
 
   const shown = await page.locator('.app-header .muted').innerText().catch(() => '')
@@ -141,7 +141,7 @@ try {
   await page.waitForTimeout(400)
 
   await page.goto(`${APP_URL}#/`, { waitUntil: 'domcontentloaded' })
-  await page.reload({ waitUntil: 'networkidle' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
   await page.getByText('Progress').first().click()
   const after = await page.locator('.stat-row').first().innerText()
   if (!after.includes(String(seeded + 1))) {

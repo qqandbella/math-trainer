@@ -68,7 +68,7 @@ try {
     if (url.origin !== appOrigin && url.protocol !== 'data:') external.push(r.url())
   })
 
-  await page.goto(APP_URL, { waitUntil: 'networkidle' })
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   const sw = await page.evaluate(async () => {
     const reg = await navigator.serviceWorker.ready
     return { scope: reg.scope, active: !!reg.active }

@@ -98,7 +98,7 @@ try {
     Object.defineProperty(navigator, 'share', { value: undefined, configurable: true })
   })
 
-  await a.goto(APP_URL, { waitUntil: 'networkidle' })
+  await a.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await a.getByText('Daily Practice').first().click()
   await a.locator('.problem-prompt').waitFor()
   await solve(a, SOLVE)
@@ -159,7 +159,7 @@ try {
   ctxB = await chromium.launchPersistentContext(PROFILE_B, { channel: 'chrome' })
   const b = await ctxB.newPage()
   b.on('pageerror', (e) => fail(`device B page error: ${e.message}`))
-  await b.goto(APP_URL, { waitUntil: 'networkidle' })
+  await b.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 
   await b.getByText('Progress').first().click()
   await b.getByText('No practice recorded yet.').waitFor({ timeout: 5000 })
@@ -216,7 +216,7 @@ try {
   console.log(`ok  re-importing the same file changed nothing: ${second.trim()}`)
 
   await b.goto(`${APP_URL}#/`, { waitUntil: 'domcontentloaded' })
-  await b.reload({ waitUntil: 'networkidle' })
+  await b.reload({ waitUntil: 'domcontentloaded' })
   await b.getByText('Progress').first().click()
   const totals = await b.locator('.stat-row').first().innerText()
   if (!totals.includes(String(SOLVE))) {
@@ -248,7 +248,7 @@ try {
   await b.getByRole('button', { name: /Restore the \d+ erased anyway/ }).click()
   await b.waitForTimeout(1200)
   await b.goto(`${APP_URL}#/`, { waitUntil: 'domcontentloaded' })
-  await b.reload({ waitUntil: 'networkidle' })
+  await b.reload({ waitUntil: 'domcontentloaded' })
   await b.getByText('Progress').first().click()
   const restored = await b.locator('.stat-row').first().innerText()
   if (!restored.includes(String(SOLVE))) {

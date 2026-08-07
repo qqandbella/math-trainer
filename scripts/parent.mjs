@@ -69,7 +69,7 @@ const page = await ctx.newPage()
 page.on('pageerror', (e) => fail(`uncaught page error: ${e.message}`))
 
 try {
-  await page.goto(APP_URL, { waitUntil: 'networkidle' })
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 
   /* --- create some practice data, as a parent trying the app out would ---- */
   await page.getByText('Daily Practice').first().click()
@@ -145,7 +145,7 @@ try {
   // Reloading on the parent route correctly re-locks it, so go to the
   // dashboard first and reload there.
   await page.goto(`${APP_URL}#/`, { waitUntil: 'domcontentloaded' })
-  await page.reload({ waitUntil: 'networkidle' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
   await page.locator('.app-title').waitFor({ timeout: 10000 })
   const stats = await page.locator('.stat-row').first().innerText()
   if (!/\b0\b/.test(stats) || /\b4\b/.test(stats)) {

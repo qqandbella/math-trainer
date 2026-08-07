@@ -19,7 +19,7 @@ const page = await browser.newPage({
   deviceScaleFactor: 2,
 })
 
-await page.goto(URL, { waitUntil: 'networkidle' })
+await page.goto(URL, { waitUntil: 'domcontentloaded' })
 
 await page.getByText('Daily Practice').first().click()
 await page.locator('.problem-prompt').waitFor()

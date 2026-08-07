@@ -27,7 +27,7 @@ const page = await ctx.newPage()
 page.on('pageerror', (e) => fail(`page error: ${e.message}`))
 
 try {
-  await page.goto(APP_URL, { waitUntil: 'networkidle' })
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 
   const box = await page.locator('.app-title').boundingBox()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
