@@ -1,0 +1,99 @@
+rules_version = '2';
+
+// Security rules for Math Trainer.
+//
+// Two invariants matter more than anything else here:
+//
+//   1. A household's data is reachable only by its members.
+//   2. Practice history is APPEND-ONLY at the server. Records can be created
+//      but never updated or deleted, by anyone, including their author.
+//      Deletion is expressed as a tombstone record, not as a delete - which is
+//      what allows an erase to survive a merge with a device that was offline
+//      when it happened. Allowing real deletes would let a client silently
+//      rewrite history and would break convergence.
+//
+// The household id is the owner's uid for now. The membership check also reads
+// an optional `members` map, so adding a second parent later needs no data
+// migration and no rules change.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function householdDoc(hid) {
+      return /databases/$(database)/documents/households/$(hid);
+    }
+
+    function isMember(hid) {
+      return signedIn() && (
+        request.auth.uid == hid ||
+        (
+          exists(householdDoc(hid)) &&
+          request.auth.uid in get(householdDoc(hid)).data.get('members', {})
+        )
+      );
+    }
+
+    // The server stamps ordering. Requiring it to equal request.time stops a
+    // client from writing a position in the past and hiding a record behind
+    // every other device's cursor.
+    function hasServerStamp() {
+      return request.resource.data.syncedAt == request.time;
+    }
+
+    function idMatchesPayload(id) {
+      return request.resource.data.id == id;
+    }
+
+    match /households/{hid} {
+      allow read: if isMember(hid);
+      // Only ever create your own household, and only with yourself in it.
+      allow create: if signedIn() && request.auth.uid == hid;
+      allow update: if isMember(hid);
+      allow delete: if false;
+
+      match /learners/{learnerId} {
+        allow read: if isMember(hid);
+        allow create, update: if isMember(hid);
+        allow delete: if false;
+
+        // ---- append-only practice history ----
+
+        match /attempts/{recordId} {
+          allow read: if isMember(hid);
+          allow create: if isMember(hid)
+                        && hasServerStamp()
+                        && idMatchesPayload(recordId)
+                        && request.resource.data.learnerId == learnerId;
+          allow update, delete: if false;
+        }
+
+        match /sessions/{recordId} {
+          allow read: if isMember(hid);
+          allow create: if isMember(hid)
+                        && hasServerStamp()
+                        && idMatchesPayload(recordId)
+                        && request.resource.data.learnerId == learnerId;
+          allow update, delete: if false;
+        }
+
+        match /tombstones/{recordId} {
+          allow read: if isMember(hid);
+          allow create: if isMember(hid)
+                        && hasServerStamp()
+                        && idMatchesPayload(recordId)
+                        && request.resource.data.learnerId == learnerId;
+          allow update, delete: if false;
+        }
+      }
+    }
+
+    // Anything not matched above is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

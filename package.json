@@ -21,6 +21,7 @@
     "migration": "node scripts/migration.mjs"
   },
   "dependencies": {
+    "firebase": "^12.17.1",
     "idb": "^8.0.3",
     "qrcode-generator": "^2.0.4",
     "react": "^19.1.1",

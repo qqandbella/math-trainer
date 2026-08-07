@@ -63,10 +63,20 @@ interface TrainerDB extends DBSchema {
     value: Tombstone
     indexes: { 'by-learner': string }
   }
+  /** Ids awaiting publication to the shared backend. */
+  outbox: {
+    key: string
+    value: { id: string; learnerId: string; queuedAt: number }
+    indexes: { 'by-learner': string }
+  }
+  syncState: {
+    key: string
+    value: { learnerId: string; cursor: number }
+  }
 }
 
 const DB_NAME = 'math-trainer'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 let dbPromise: Promise<IDBPDatabase<TrainerDB>> | null = null
 
@@ -121,6 +131,29 @@ function db(): Promise<IDBPDatabase<TrainerDB>> {
             }
           }
         }
+
+        if (oldVersion < 3) {
+          const outbox = database.createObjectStore('outbox', { keyPath: 'id' })
+          outbox.createIndex('by-learner', 'learnerId')
+          database.createObjectStore('syncState', { keyPath: 'learnerId' })
+
+          // Queue everything already on this device, so the first sync after
+          // signing in publishes the existing history rather than only future
+          // practice.
+          const queuedAt = Date.now()
+          const attempts = tx.objectStore('attempts')
+          for await (const cursor of attempts.iterate()) {
+            await outbox.put({ id: cursor.value.id, learnerId: cursor.value.learnerId, queuedAt })
+          }
+          const sessions = tx.objectStore('sessions')
+          for await (const cursor of sessions.iterate()) {
+            await outbox.put({ id: cursor.value.id, learnerId: cursor.value.learnerId, queuedAt })
+          }
+          const tombstones = tx.objectStore('tombstones')
+          for await (const cursor of tombstones.iterate()) {
+            await outbox.put({ id: cursor.value.id, learnerId: cursor.value.learnerId, queuedAt })
+          }
+        }
       },
     })
   }
@@ -150,20 +183,73 @@ export async function requestPersistentStorage(): Promise<boolean> {
   }
 }
 
-export async function saveAttempts(attempts: readonly Attempt[]): Promise<void> {
+/**
+ * `enqueue` marks records for publication. It must stay false for records
+ * arriving *from* sync, or every device would echo back everything it received.
+ */
+export async function saveAttempts(
+  attempts: readonly Attempt[],
+  { enqueue = false }: { enqueue?: boolean } = {},
+): Promise<void> {
   if (attempts.length === 0) return
   const database = await db()
   const tx = database.transaction('attempts', 'readwrite')
   await Promise.all(attempts.map((a) => tx.store.put(a)))
   await tx.done
+  if (enqueue) {
+    await enqueueForSync(attempts.map((a) => ({ id: a.id, learnerId: a.learnerId })))
+  }
+}
+
+export async function enqueueForSync(
+  records: readonly { id: string; learnerId: string }[],
+): Promise<void> {
+  if (records.length === 0) return
+  const database = await db()
+  const tx = database.transaction('outbox', 'readwrite')
+  const queuedAt = Date.now()
+  await Promise.all(records.map((r) => tx.store.put({ ...r, queuedAt })))
+  await tx.done
+}
+
+export async function outboxIds(learnerId: string): Promise<string[]> {
+  const rows = await (await db()).getAllFromIndex('outbox', 'by-learner', learnerId)
+  return rows.sort((a, b) => a.queuedAt - b.queuedAt).map((r) => r.id)
+}
+
+export async function clearOutbox(ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return
+  const database = await db()
+  const tx = database.transaction('outbox', 'readwrite')
+  await Promise.all(ids.map((id) => tx.store.delete(id)))
+  await tx.done
+}
+
+export async function getSyncCursor(learnerId: string): Promise<number> {
+  return (await (await db()).get('syncState', learnerId))?.cursor ?? 0
+}
+
+export async function setSyncCursor(learnerId: string, cursor: number): Promise<void> {
+  await (await db()).put('syncState', { learnerId, cursor })
 }
 
 export async function loadAttempts(): Promise<Attempt[]> {
   return (await db()).getAllFromIndex('attempts', 'by-at')
 }
 
-export async function saveSession(session: SessionRecord): Promise<void> {
+export async function saveSession(
+  session: SessionRecord,
+  { enqueue = false }: { enqueue?: boolean } = {},
+): Promise<void> {
   await (await db()).put('sessions', session)
+  if (enqueue) await enqueueForSync([{ id: session.id, learnerId: session.learnerId }])
+}
+
+export async function saveSessions(
+  sessions: readonly SessionRecord[],
+  { enqueue = false }: { enqueue?: boolean } = {},
+): Promise<void> {
+  for (const session of sessions) await saveSession(session, { enqueue })
 }
 
 export async function loadSessions(): Promise<SessionRecord[]> {
@@ -182,12 +268,18 @@ export async function loadTombstones(): Promise<Tombstone[]> {
   return (await db()).getAll('tombstones')
 }
 
-export async function saveTombstones(tombstones: readonly Tombstone[]): Promise<void> {
+export async function saveTombstones(
+  tombstones: readonly Tombstone[],
+  { enqueue = false }: { enqueue?: boolean } = {},
+): Promise<void> {
   if (tombstones.length === 0) return
   const database = await db()
   const tx = database.transaction('tombstones', 'readwrite')
   await Promise.all(tombstones.map((t) => tx.store.put(t)))
   await tx.done
+  if (enqueue) {
+    await enqueueForSync(tombstones.map((t) => ({ id: t.id, learnerId: t.learnerId })))
+  }
 }
 
 /** Only used to undo an erase during an explicit restore. */
@@ -299,7 +391,7 @@ export async function erasePracticeData(
   const attempts = await loadAttempts()
   const latestKnownAt = attempts.reduce((max, a) => Math.max(max, a.at), 0)
   const tombstone = makePurge(learnerId, deviceId, Date.now(), latestKnownAt)
-  await saveTombstones([tombstone])
+  await saveTombstones([tombstone], { enqueue: true })
   const removed = await applyTombstonesLocally([tombstone])
   return { tombstone, ...removed }
 }
