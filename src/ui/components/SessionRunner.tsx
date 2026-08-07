@@ -68,7 +68,7 @@ export function SessionRunner({
     const pending = session.attempts.slice(flushedRef.current)
     if (pending.length === 0) return
     flushedRef.current = session.attempts.length
-    void saveAttempts(pending)
+    void saveAttempts(pending, { enqueue: true })
   }, [session.attempts, persist])
 
   /**
@@ -84,7 +84,7 @@ export function SessionRunner({
       const pending = attemptsRef.current.slice(flushedRef.current)
       if (pending.length === 0) return
       flushedRef.current = attemptsRef.current.length
-      void saveAttempts(pending)
+      void saveAttempts(pending, { enqueue: true })
     }
     const onVisibility = (): void => {
       if (document.visibilityState === 'hidden') flush()

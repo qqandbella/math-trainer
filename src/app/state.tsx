@@ -22,6 +22,12 @@ import {
   type Settings,
 } from '../storage/db'
 
+export interface SyncStatus {
+  account: { uid: string; email: string | null } | null
+  busy: boolean
+  message: string
+}
+
 interface AppState {
   ready: boolean
   attempts: Attempt[]
@@ -39,6 +45,10 @@ interface AppState {
   recordSession(session: SessionRecord, attempts: readonly Attempt[]): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<void>
   reload(): Promise<void>
+  sync: SyncStatus
+  signInToSync(): Promise<void>
+  signOutOfSyncing(): Promise<void>
+  runSync(): Promise<void>
 }
 
 const Ctx = createContext<AppState | null>(null)
@@ -48,6 +58,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
   const [attempts, setAttempts] = useState<Attempt[]>([])
   const [sessions, setSessions] = useState<SessionRecord[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
+  const [sync, setSync] = useState<SyncStatus>({ account: null, busy: false, message: '' })
 
   const reload = useCallback(async () => {
     const [a, s, cfg] = await Promise.all([loadAttempts(), loadSessions(), loadSettings()])
@@ -61,6 +72,59 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
     void reload()
     void requestPersistentStorage()
   }, [reload])
+
+  const runSync = useCallback(async () => {
+    const learnerId = settings.activeLearnerId
+    if (!learnerId) return
+    setSync((s) => ({ ...s, busy: true }))
+    const { syncNow, describeSync } = await import('../sync/syncNow')
+    const result = await syncNow(learnerId)
+    await reload()
+    setSync((s) => ({ ...s, busy: false, message: describeSync(result) }))
+  }, [settings.activeLearnerId, reload])
+
+  const signInToSync = useCallback(async () => {
+    setSync((s) => ({ ...s, busy: true, message: '' }))
+    try {
+      const { signIn } = await import('../sync/auth')
+      const account = await signIn()
+      if (account) {
+        await saveSettings({ syncEnabled: true })
+        setSettings((prev) => ({ ...prev, syncEnabled: true }))
+        setSync((s) => ({ ...s, account, busy: false }))
+      } else {
+        setSync((s) => ({ ...s, busy: false }))
+      }
+    } catch (error) {
+      setSync((s) => ({
+        ...s,
+        busy: false,
+        message: error instanceof Error ? error.message : 'Sign-in failed.',
+      }))
+    }
+  }, [])
+
+  const signOutOfSyncing = useCallback(async () => {
+    const { signOutOfSync } = await import('../sync/auth')
+    await signOutOfSync()
+    await saveSettings({ syncEnabled: false })
+    setSettings((prev) => ({ ...prev, syncEnabled: false }))
+    setSync({ account: null, busy: false, message: 'Signed out. Data stays on this device.' })
+  }, [])
+
+  // Only devices that have opted into sync ever load the Firebase SDK.
+  useEffect(() => {
+    if (!ready || !settings.syncEnabled) return
+    let dispose: (() => void) | undefined
+    void (async () => {
+      const { observeAccount } = await import('../sync/auth')
+      dispose = await observeAccount((account) => {
+        setSync((s) => ({ ...s, account }))
+        if (account) void runSync()
+      })
+    })()
+    return () => dispose?.()
+  }, [ready, settings.syncEnabled, runSync])
 
   const skills = useMemo(() => {
     const overrides = settings.targetOverrides
@@ -77,7 +141,10 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
 
   const recordSession = useCallback(
     async (session: SessionRecord, newAttempts: readonly Attempt[]) => {
-      await Promise.all([saveSession(session), saveAttempts(newAttempts)])
+      await Promise.all([
+        saveSession(session, { enqueue: true }),
+        saveAttempts(newAttempts, { enqueue: true }),
+      ])
       setSessions((prev) => [...prev, session])
       setAttempts((prev) => [...prev, ...newAttempts])
     },
@@ -103,6 +170,10 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       recordSession,
       updateSettings,
       reload,
+      sync,
+      signInToSync,
+      signOutOfSyncing,
+      runSync,
     }),
     [
       ready,
@@ -114,6 +185,10 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       recordSession,
       updateSettings,
       reload,
+      sync,
+      signInToSync,
+      signOutOfSyncing,
+      runSync,
     ],
   )
 

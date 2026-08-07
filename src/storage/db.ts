@@ -19,6 +19,11 @@ export interface Settings {
   deviceId: string
   /** Which learner new practice is recorded against. */
   activeLearnerId: string
+  /**
+   * Whether this device has ever signed in to sync. Gates loading the Firebase
+   * SDK at all, so a device that never syncs never downloads it.
+   */
+  syncEnabled: boolean
   createdAt: number
 }
 
@@ -31,6 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   parentTotpSecret: null,
   deviceId: '',
   activeLearnerId: '',
+  syncEnabled: false,
   createdAt: 0,
 }
 

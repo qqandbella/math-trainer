@@ -36,12 +36,34 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Firebase is only reachable when signed in, which requires a network
+        // anyway. Precaching it would make every offline-first device download
+        // ~700 KB it can never use.
+        globIgnores: ['**/firebase-*.js'],
         // The whole app must survive a cold start with no network (car use).
         navigateFallback: `${BASE}index.html`,
         cleanupOutdatedCaches: true,
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // Predictable names so the service worker can exclude them.
+        manualChunks(id: string) {
+          if (id.includes('node_modules/@firebase') || id.includes('node_modules/firebase')) {
+            return 'firebase-sdk'
+          }
+          return undefined
+        },
+        chunkFileNames(chunkInfo: { name: string }) {
+          return chunkInfo.name === 'firebase-sdk'
+            ? 'assets/firebase-[hash].js'
+            : 'assets/[name]-[hash].js'
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'node',
