@@ -239,6 +239,10 @@ function ParentHome({ navigate }: Props): ReactNode {
         </button>
       </div>
 
+      <p className="faint" style={{ margin: '-6px 0 0' }}>
+        Build {__BUILD_ID__}
+      </p>
+
       <MasteryTable />
 
       <div className="mode-grid">

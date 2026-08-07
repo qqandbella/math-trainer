@@ -8,6 +8,12 @@ const BASE = '/math-trainer/'
 
 export default defineConfig({
   base: BASE,
+  define: {
+    // Stamped at build time so a device can report exactly which build it runs.
+    __BUILD_ID__: JSON.stringify(
+      process.env.GITHUB_SHA?.slice(0, 7) ?? new Date().toISOString().slice(0, 16).replace('T', ' '),
+    ),
+  },
   plugins: [
     react(),
     VitePWA({
