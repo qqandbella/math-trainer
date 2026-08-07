@@ -36,7 +36,11 @@ page.on('pageerror', (error) => fail(`uncaught page error: ${error.message}`))
 try {
   await page.goto(URL, { waitUntil: 'domcontentloaded' })
 
-  if (!(await page.locator('.app-title').isVisible())) fail('dashboard did not render')
+  // Wait for the app to mount rather than sampling instantly: the page is
+  // served long before React renders.
+  await page.locator('.app-title').waitFor({ timeout: 15000 }).catch(() => {
+    fail('dashboard did not render')
+  })
   console.log('ok  dashboard rendered')
 
   await page.getByText('Daily Practice').first().click()
