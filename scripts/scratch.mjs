@@ -28,7 +28,11 @@ const inkPixels = () => page.evaluate(() => {
 /** Draws using coordinates relative to the canvas's visible area. */
 const drawStroke = async (points) => {
   const locator = page.locator('.scratch-canvas')
-  await locator.scrollIntoViewIfNeeded()
+  // Centre it every time: coordinates are mapped onto the visible part of the
+  // canvas, so an inconsistent scroll position would put the same relative
+  // point somewhere different.
+  await locator.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  await page.waitForTimeout(80)
   const box = await locator.boundingBox()
   const view = page.viewportSize()
   const top = Math.max(0, box.y) + 8
@@ -74,9 +78,31 @@ try {
     const keys = await page.locator('.keypad').boundingBox()
     const share = (pad.width * pad.height) / (size.width * size.height)
     if (share < 0.35) fail(`${name}: pad is only ${Math.round(share * 100)}% of the screen`)
-    if (keys.y + keys.height > size.height + 2) fail(`${name}: keypad is off screen`)
     const landscape = size.width > size.height
     const beside = pad.x + pad.width <= keys.x + 5
+
+    // The pad once overflowed a fixed-height column and painted over the
+    // keypad, while the overflow was never added to any scroll height.
+    const overlaps =
+      pad.y < keys.y + keys.height &&
+      keys.y < pad.y + pad.height &&
+      pad.x < keys.x + keys.width &&
+      keys.x < pad.x + pad.width
+    if (overlaps) fail(`${name}: the scratch pad is drawn over the keypad`)
+
+    // Everything must be reachable by scrolling, in both directions.
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+    await page.waitForTimeout(120)
+    const keysBottom = await page.locator('.keypad').boundingBox()
+    if (keysBottom.y + keysBottom.height > size.height + 2) {
+      fail(`${name}: the keypad cannot be scrolled into view`)
+    }
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.waitForTimeout(120)
+    const promptBox = await page.locator('.problem-prompt').boundingBox()
+    if (promptBox.y < -1 || promptBox.y + promptBox.height > size.height) {
+      fail(`${name}: the problem cannot be scrolled into view`)
+    }
     if (landscape && !beside) fail(`${name}: answer area should sit beside the pad, not below`)
     if (!landscape && beside) fail(`${name}: pad should span the full width`)
     console.log(

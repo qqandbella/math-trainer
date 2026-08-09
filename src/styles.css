@@ -27,7 +27,9 @@
 html,
 body,
 #root {
-  height: 100%;
+  /* Minimum, not fixed: a pinned body cannot scroll, so anything taller than
+     the viewport - the keypad below an open scratch pad - became unreachable. */
+  min-height: 100%;
   margin: 0;
 }
 
@@ -237,10 +239,13 @@ h3 {
 .session {
   display: flex;
   flex-direction: column;
-  /* Fixed rather than minimum height: the scratch pad must shrink to fit the
-     screen, or the answer strip below it ends up under the fold. dvh accounts
-     for mobile browser chrome that vh does not. */
-  height: calc(100dvh - 40px);
+  /*
+   * Minimum, not fixed. A fixed height traps the pad in a box it cannot grow
+   * out of: with a canvas that must not shrink, the overflow painted straight
+   * over the keypad and never added to the scroll height. Letting the page grow
+   * means the document scrolls normally instead.
+   */
+  min-height: calc(100dvh - 40px);
   gap: 12px;
 }
 
@@ -271,7 +276,14 @@ h3 {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /*
+   * `safe center` centres while there is room and falls back to start when the
+   * content overflows. Plain `center` pushes the overflow off BOTH ends of a
+   * scroll container, and the part above the top can never be scrolled to -
+   * which hid the problem itself once the scratch pad was open.
+   */
   justify-content: center;
+  justify-content: safe center;
   gap: 18px;
   padding: 12px 0;
   /* Lets the flex children actually shrink instead of overflowing. */
@@ -743,10 +755,7 @@ details summary::-webkit-details-marker {
   color: var(--accent-dark);
 }
 
-/* The whole session scrolls when the pad is open on a short screen. */
-.session {
-  overflow-y: auto;
-}
+
 
 /*
  * Landscape: the pad takes the whole height on the left, and everything needed
