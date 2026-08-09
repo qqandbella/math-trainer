@@ -41,7 +41,14 @@ export function SessionRunner({
   const [flash, setFlash] = useState(false)
   const savedRef = useRef(false)
   const [preset, setPreset] = useState<{ value: string; nonce: number } | undefined>(undefined)
-  const [scratchOpen, setScratchOpen] = useState(false)
+  /**
+   * Open by default on a tablet, folded on a phone. A tablet has room for the
+   * pad and the keypad at once; a phone does not, and starting folded keeps the
+   * first thing she sees simple.
+   */
+  const [scratchOpen, setScratchOpen] = useState(
+    () => Math.min(window.innerWidth, window.innerHeight) >= 600,
+  )
   const flushedRef = useRef(0)
 
   const skillsById = useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills])

@@ -57,11 +57,23 @@ try {
 
   // One screen: the keypad is present from the start and never goes away.
   if (!(await page.locator('.keypad').isVisible())) fail('keypad missing')
-  if (await page.locator('.scratch-canvas').isVisible()) fail('pad open before it was asked for')
-  console.log('ok  starts folded, with the keypad available')
 
-  await page.getByRole('button', { name: /scratch pad/ }).click()
-  await page.locator('.scratch-canvas').waitFor({ timeout: 5000 })
+  // Open by default where there is room for both, folded on a phone.
+  const view = page.viewportSize()
+  const roomy = Math.min(view.width, view.height) >= 600
+  const openInitially = await page.locator('.scratch-canvas').isVisible()
+  if (openInitially !== roomy) {
+    fail(`pad ${openInitially ? 'open' : 'folded'} by default at ${view.width}x${view.height}`)
+  }
+  console.log(`ok  pad ${roomy ? 'open' : 'folded'} by default at ${view.width}x${view.height}`)
+
+  const ensureOpen = async () => {
+    if (!(await page.locator('.scratch-canvas').isVisible())) {
+      await page.getByRole('button', { name: /scratch pad/ }).click()
+    }
+    await page.locator('.scratch-canvas').waitFor({ timeout: 5000 })
+  }
+  await ensureOpen()
   if (!(await page.locator('.keypad').isVisible())) fail('opening the pad hid the keypad')
   if (!(await page.locator('.answer-box').first().isVisible())) fail('answer box hidden')
   console.log('ok  opening the pad keeps the keypad and answer box on screen')
@@ -74,12 +86,14 @@ try {
   ]) {
     await page.setViewportSize(size)
     await page.waitForTimeout(250)
+    await ensureOpen()
     const pad = await page.locator('.scratch-canvas').boundingBox()
     const keys = await page.locator('.keypad').boundingBox()
     const share = (pad.width * pad.height) / (size.width * size.height)
     if (share < 0.35) fail(`${name}: pad is only ${Math.round(share * 100)}% of the screen`)
     const landscape = size.width > size.height
-    const beside = pad.x + pad.width <= keys.x + 5
+    // Answering on the left, working space on the right.
+    const beside = keys.x + keys.width <= pad.x + 5
 
     // The pad once overflowed a fixed-height column and painted over the
     // keypad, while the overflow was never added to any scroll height.
@@ -103,11 +117,11 @@ try {
     if (promptBox.y < -1 || promptBox.y + promptBox.height > size.height) {
       fail(`${name}: the problem cannot be scrolled into view`)
     }
-    if (landscape && !beside) fail(`${name}: answer area should sit beside the pad, not below`)
+    if (landscape && !beside) fail(`${name}: the pad should sit to the right of the answer area`)
     if (!landscape && beside) fail(`${name}: pad should span the full width`)
     console.log(
       `ok  ${name}: pad ${Math.round(pad.width)}x${Math.round(pad.height)} ` +
-        `(${Math.round(share * 100)}% of screen, ${beside ? 'answer beside' : 'full width'})`,
+        `(${Math.round(share * 100)}% of screen, ${beside ? 'answer left / pad right' : 'full width'})`,
     )
   }
   await page.setViewportSize({ width: 1280, height: 720 })
@@ -150,6 +164,12 @@ try {
   // Folding and unfolding must not lose the working out.
   await page.getByRole('button', { name: /scratch pad/ }).click()
   if (await page.locator('.scratch-canvas').isVisible()) fail('pad did not fold away')
+  // Folded, everything must return to one centred column rather than clinging
+  // to the side the two-column layout put it in.
+  const foldedKeys = await page.locator('.keypad').boundingBox()
+  const off = Math.abs(foldedKeys.x + foldedKeys.width / 2 - page.viewportSize().width / 2)
+  if (off > 30) fail(`folded layout is not centred (${Math.round(off)}px off)`)
+  console.log('ok  folding returns to a single centred column')
   await page.getByRole('button', { name: /scratch pad/ }).click()
   await page.locator('.scratch-canvas').waitFor()
   const after = await inkPixels()

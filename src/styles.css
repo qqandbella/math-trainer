@@ -757,64 +757,59 @@ details summary::-webkit-details-marker {
 
 
 
+
 /*
- * Landscape: the pad takes the whole height on the left, and everything needed
- * to answer - problem, boxes, keypad - stacks in a column on the right. Simply
- * stacking them would leave the pad a shallow band on a short screen.
+ * Landscape with the pad open: answering on the left, working space on the
+ * right - the natural order for a right-handed writer, and it keeps the problem
+ * where the eye starts.
+ *
+ * Only when the pad is open. Folded, the layout stays a single centred column,
+ * because a two-column grid with nothing in one column just pushes everything
+ * off to one side.
  */
 @media (orientation: landscape) and (min-width: 760px) {
-  /* A session uses the whole screen; the 900px reading measure that suits the
-     dashboard just starves the pad here. */
-  .app:has(.session) {
+  .app:has(.scratch.expanded) {
     max-width: none;
   }
 
-  .problem-area {
+  .problem-area:has(.scratch.expanded) {
     display: grid;
-    /* Fills the available height so the pad spans it rather than sizing to the
-       answer column beside it. */
     height: 100%;
-    display: grid;
-    grid-template-columns: 1fr minmax(300px, 380px);
+    grid-template-columns: minmax(300px, 400px) 1fr;
     grid-template-rows: auto auto 1fr;
     grid-template-areas:
-      'pad prompt'
-      'pad boxes'
-      'pad keys';
+      'prompt pad'
+      'boxes pad'
+      'keys pad';
     gap: 10px 18px;
     align-items: start;
     width: 100%;
   }
 
-  .problem-area .problem-prompt {
+  .problem-area:has(.scratch.expanded) .problem-prompt {
     grid-area: prompt;
     font-size: clamp(24px, 3.2vw, 40px);
   }
 
-  .problem-area .answer-line-wrap {
+  .problem-area:has(.scratch.expanded) .answer-line-wrap {
     grid-area: boxes;
   }
 
-  .problem-area .keypad {
+  .problem-area:has(.scratch.expanded) .keypad {
     grid-area: keys;
     align-self: end;
   }
 
-  .problem-area .scratch {
+  .problem-area:has(.scratch.expanded) .scratch {
     grid-area: pad;
     height: 100%;
     min-height: 0;
   }
 
   /* Fills the column rather than being a fixed-height band. */
-  .problem-area .scratch-canvas {
+  .problem-area:has(.scratch.expanded) .scratch-canvas {
     flex: 1;
     height: auto;
     min-height: 0;
-    flex-shrink: 1;
-  }
-
-  .scratch-toggle {
-    align-self: flex-start;
   }
 }
