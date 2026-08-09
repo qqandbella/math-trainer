@@ -5,10 +5,8 @@ interface Props {
   problem: Problem
   onSubmit(answer: number, remainder: number | null): void
   onSkip?: (() => void) | undefined
-  /** Shows the answer boxes without the keypad, for scratch-pad mode. */
-  compact?: boolean
-  /** Tapping a box in compact mode asks for the keypad back. */
-  onRequestKeypad?: (() => void) | undefined
+  /** Rendered between the answer boxes and the keypad. */
+  children?: ReactNode
   /**
    * Fills the answer box from outside - used by handwriting recognition. The
    * nonce lets the same value be applied twice. Never auto-submits: a misread
@@ -30,9 +28,8 @@ export function AnswerPad({
   problem,
   onSubmit,
   onSkip,
-  compact = false,
-  onRequestKeypad,
   preset,
+  children,
 }: Props): ReactNode {
   const needsRemainder = problem.remainder !== undefined
 
@@ -144,10 +141,7 @@ export function AnswerPad({
           <button
             type="button"
             className={`answer-box${field === 'primary' ? ' active' : ''}`}
-            onClick={() => {
-              setField('primary')
-              if (compact) onRequestKeypad?.()
-            }}
+            onClick={() => setField('primary')}
           >
             {primary || <span className="placeholder">?</span>}
           </button>
@@ -157,10 +151,7 @@ export function AnswerPad({
               <button
                 type="button"
                 className={`answer-box small${field === 'remainder' ? ' active' : ''}`}
-                onClick={() => {
-                  setField('remainder')
-                  if (compact) onRequestKeypad?.()
-                }}
+                onClick={() => setField('remainder')}
               >
                 {remainder || <span className="placeholder">?</span>}
               </button>
@@ -169,7 +160,8 @@ export function AnswerPad({
         </div>
       </div>
 
-      {compact ? null : (
+      {children}
+
       <div className="keypad">
         {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map((digit) => (
           <button key={digit} type="button" className="key" onClick={() => pressDigit(digit)}>
@@ -215,7 +207,6 @@ export function AnswerPad({
           </button>
         )}
       </div>
-      )}
     </>
   )
 }

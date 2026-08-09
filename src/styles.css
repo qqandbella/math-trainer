@@ -679,73 +679,38 @@ details summary::-webkit-details-marker {
   transition: opacity 3s linear;
 }
 
+
 /* ---------- scratch pad ---------- */
 
-.problem-area.scratch-mode {
-  justify-content: flex-start;
-  gap: 10px;
-}
-
-/* Horizontal gestures belong to the mode switch; vertical scrolling does not. */
-.problem-area {
-  touch-action: pan-y;
-}
-
-.problem-area.scratch-mode .problem-prompt {
-  font-size: clamp(24px, 5vw, 34px);
-}
-
 .scratch {
-  flex: 1;
   width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 0;
 }
 
- /* Roughly three quarters working space to one quarter answer space. */
-.scratch-work {
-  flex: 3;
+.scratch-toggle {
+  align-self: flex-start;
+  min-height: 40px;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+.scratch-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-height: 0;
+  gap: 8px;
 }
 
-.answer-strip {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 4px;
-  border-top: 1px dashed var(--line);
-  min-height: 0;
-}
-
-.answer-strip-label {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--ink-faint);
-}
-
-.answer-canvas {
-  flex: 1;
-  min-height: 90px;
-  width: 100%;
-  background: var(--surface);
-  border: 2px solid var(--accent);
-  border-radius: 12px;
-  touch-action: none;
-  cursor: crosshair;
+.scratch-body.hidden {
+  display: none;
 }
 
 .scratch-canvas {
-  flex: 1;
-  /* Small enough to leave room for the answer strip on a phone. */
-  min-height: 120px;
+  /* Tall enough for long division, short enough to leave the keypad reachable. */
+  height: clamp(180px, 34vh, 340px);
   width: 100%;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -757,95 +722,25 @@ details summary::-webkit-details-marker {
 
 .scratch-tools {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .scratch-tools .btn {
   flex: 1;
-  min-height: 52px;
-  font-size: 16px;
+  min-height: 48px;
+  font-size: 15px;
   background: var(--surface);
   box-shadow: var(--shadow);
   white-space: nowrap;
 }
 
-/*
- * Needed because the rule above is more specific than .btn-primary and would
- * otherwise leave white text on a white button - an invisible label.
- */
-.scratch-tools .btn-primary {
-  background: var(--accent);
-  color: #fff;
-}
-
-.scratch-tools .btn-primary:active {
-  background: var(--accent-dark);
-}
-
-/* Fixed width so it never squeezes the labelled buttons beside it. */
 .scratch-tools .tool-active {
   background: rgba(47, 107, 255, 0.14);
   border: 2px solid var(--accent);
   color: var(--accent-dark);
 }
 
-.scratch-tools .keypad-escape {
-  flex: 0 0 64px;
-  font-size: 22px;
-}
-
-.mode-toggle {
-  font-size: 14px;
-  min-height: 40px;
-}
-
-.scratch-host {
-  flex: 1;
-  width: 100%;
-  display: flex;
-  min-height: 0;
-}
-
-.scratch-host.hidden {
-  display: none;
-}
-
-/*
- * Landscape on a tablet is wide and short. Stacking the answer strip under the
- * working area leaves both too shallow to write in, so they sit side by side
- * instead and each keeps the full height.
- */
-@media (orientation: landscape) and (max-height: 900px) {
-  .scratch {
-    flex-direction: row;
-    gap: 12px;
-  }
-
-  .scratch-work {
-    flex: 2;
-  }
-
-  .answer-strip {
-    flex: 1;
-    min-width: 200px;
-    border-top: none;
-    border-left: 1px dashed var(--line);
-    padding-top: 0;
-    padding-left: 12px;
-  }
-
-  /* Fills the column rather than being a fixed-height strip. */
-  .answer-canvas {
-    flex: 1;
-    height: auto;
-    min-height: 80px;
-  }
-
-  .problem-area.scratch-mode .problem-prompt {
-    font-size: clamp(20px, 3.4vw, 28px);
-  }
-
-  .problem-area.scratch-mode {
-    gap: 6px;
-  }
+/* The whole session scrolls when the pad is open on a short screen. */
+.session {
+  overflow-y: auto;
 }

@@ -39,14 +39,9 @@ export function SessionRunner({
   const { recordSession, settings, skills } = useAppState()
   const session = useSession(spec)
   const [flash, setFlash] = useState(false)
-  const [mode, setMode] = useState<'answer' | 'scratch'>('answer')
   const savedRef = useRef(false)
-  const swipeStart = useRef<{ x: number; y: number } | null>(null)
-  const swipeLast = useRef<{ x: number; y: number } | null>(null)
   const [preset, setPreset] = useState<{ value: string; nonce: number } | undefined>(undefined)
-  const [reading, setReading] = useState('')
-  const [pending, setPending] = useState<string | null>(null)
-  const handleSubmitRef = useRef<((answer: number, remainder: number | null) => void) | null>(null)
+  const [scratchOpen, setScratchOpen] = useState(false)
   const flushedRef = useRef(0)
 
   const skillsById = useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills])
@@ -132,82 +127,11 @@ export function SessionRunner({
   // submitted from the pad, it is a way of working, not a detour. Only the
   // paper and any pending reading reset.
   useEffect(() => {
-    setReading('')
     // Coming back to an answered problem pre-fills what was entered, so a typo
     // is a correction rather than a retype.
-    setPending(null)
     const previous = session.answerForCurrent
     setPreset(previous === null ? undefined : { value: previous, nonce: Date.now() })
   }, [currentId, session.answerForCurrent])
-
-  /**
-   * Horizontal swipe toggles the two modes. Started only outside the drawing
-   * surface, or every stroke would be read as a gesture.
-   */
-  const onSwipeStart = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
-    if ((event.target as HTMLElement).closest('.scratch-canvas')) return
-    // Gestures beginning at a screen edge belong to the browser (back/forward).
-    if (event.clientX < 24 || event.clientX > window.innerWidth - 24) {
-      swipeStart.current = null
-      return
-    }
-    swipeStart.current = { x: event.clientX, y: event.clientY }
-    swipeLast.current = { x: event.clientX, y: event.clientY }
-  }, [])
-
-  const onSwipeMove = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
-    if (swipeStart.current) swipeLast.current = { x: event.clientX, y: event.clientY }
-  }, [])
-
-  // Resolved from the last observed position rather than the end event, because
-  // a cancelled pointer carries the coordinates of the cancellation, not the
-  // gesture.
-  const allowScratch = spec.allowScratch
-  const resolveSwipe = useCallback((): void => {
-    const start = swipeStart.current
-    const last = swipeLast.current
-    swipeStart.current = null
-    swipeLast.current = null
-    if (!start || !last) return
-    const dx = last.x - start.x
-    const dy = last.y - start.y
-    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return
-    if (!allowScratch) return
-    setMode(dx < 0 ? 'scratch' : 'answer')
-  }, [allowScratch])
-
-  /**
-   * Reads the handwriting and puts it in the answer box for confirmation.
-   *
-   * Deliberately never submits. Recognition is ~97% on clean digits, and a
-   * silent misread would record a wrong answer for a correct one - corrupting
-   * the very measurements the app exists to produce.
-   */
-  const handleRead = useCallback(async (strokes: { x: number; y: number }[][]) => {
-    const { recogniseNumber } = await import('../../recognize/preprocess')
-    const result = recogniseNumber(strokes)
-    if (result.text === '') {
-      setReading('Could not read that — try writing the digits a little larger.')
-      return
-    }
-    // Stay on the pad: the answer box above already shows the reading, and the
-    // submit button carries it, so there is nothing to go back to the keypad for.
-    setPreset({ value: result.text, nonce: Date.now() })
-    setPending(result.text)
-    setReading(
-      result.weakest < 0.8
-        ? `Read "${result.text}" — not certain, check it before submitting.`
-        : `Read "${result.text}" — check it, then submit.`,
-    )
-  }, [])
-
-  const submitPending = useCallback(() => {
-    if (pending === null) return
-    const value = Number(pending)
-    setPending(null)
-    setReading('')
-    handleSubmitRef.current?.(value, null)
-  }, [pending])
 
   const handleSubmit = useCallback(
     (answer: number, remainder: number | null) => {
@@ -219,8 +143,6 @@ export function SessionRunner({
     },
     [session],
   )
-
-  handleSubmitRef.current = handleSubmit
 
   const handleRestart = useCallback(() => {
     savedRef.current = false
@@ -281,54 +203,23 @@ export function SessionRunner({
         <div className="progress-fill" style={{ width: `${Math.min(100, progress * 100)}%` }} />
       </div>
 
-      <div
-        className={`problem-area${flash ? ' flash-correct' : ''}${
-          mode === 'scratch' ? ' scratch-mode' : ''
-        }`}
-        onPointerDown={onSwipeStart}
-        onPointerMove={onSwipeMove}
-        onPointerUp={resolveSwipe}
-        onPointerCancel={resolveSwipe}
-      >
+      <div className={`problem-area${flash ? ' flash-correct' : ''}`}>
         <div className="problem-prompt">{current ? `${current.prompt} =` : ''}</div>
         {current && (
           <AnswerPad
             problem={current}
             onSubmit={handleSubmit}
             onSkip={spec.allowSkip ? session.skip : undefined}
-            compact={mode === 'scratch'}
-            onRequestKeypad={() => setMode('answer')}
             preset={preset}
-          />
-        )}
-        {current && spec.allowScratch && (
-          // Kept mounted, only hidden: unmounting would discard the working out
-          // every time she checked the keypad.
-          <div className={mode === 'scratch' ? 'scratch-host' : 'scratch-host hidden'}>
-            <ScratchPad
-              resetKey={current.id}
-              onRead={handleRead}
-              pending={pending}
-              onSubmitPending={submitPending}
-              onAnswerChanged={() => setPending(null)}
-              onUseKeypad={() => setMode('answer')}
-              visible={mode === 'scratch'}
-            />
-          </div>
-        )}
-        {reading && (
-          <p className="faint center" style={{ margin: 0 }}>
-            {reading}
-          </p>
-        )}
-        {spec.allowScratch && mode === 'answer' && (
-          <button
-            type="button"
-            className="btn btn-ghost mode-toggle"
-            onClick={() => setMode('scratch')}
           >
-            ✎ scratch pad
-          </button>
+            {spec.allowScratch && (
+              <ScratchPad
+                resetKey={current.id}
+                expanded={scratchOpen}
+                onToggle={() => setScratchOpen((open) => !open)}
+              />
+            )}
+          </AnswerPad>
         )}
       </div>
 

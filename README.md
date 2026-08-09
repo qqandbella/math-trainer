@@ -26,7 +26,8 @@ npm run parent       # parent gesture, TOTP enrollment, and the erase path
 npm run transfer     # export from one profile, import into another, twice
 npm run qr           # decode the enrollment QR and check it carries the right URL
 npm run migration    # seed a real v1 database and check the upgrade preserves it
-npm run scratch      # scratch pad: drawing, undo, mode switching, reset per problem
+npm run scratch      # scratch pad: drawing, erasing, folding, reset per problem
+npm run correct      # going back to fix a mistyped answer
 ```
 
 ## How it works
@@ -86,46 +87,34 @@ down further. Switch to immediate right/wrong in Parent → Settings.
 
 ### Scratch pad
 
-Multi-digit work needs somewhere to write. Swipe left, or tap **scratch pad**, and
-the keypad gives way to a drawing surface with the problem still visible; swipe
-right or tap **enter answer** to come back. Nothing is stored — this is paper,
-not data.
+One screen. The problem, the answer box and the keypad are always there; the
+scratch pad folds open between the answer box and the keypad when it is wanted,
+and folds away when it is not. Opening it never takes the keypad away.
 
-Strokes are kept as point lists rather than being flattened into the canvas, so
-undo is a real operation and resizing redraws rather than stretching a bitmap.
-Once a stylus is seen, touch is ignored for the rest of that problem: on a tablet
-the palm lands before the pen does. The physical keyboard stays live while the
-pad is open, so on a laptop the answer can be typed without switching back.
+Write and erase, plus clear. The eraser removes whole strokes it is dragged
+over, which is why strokes are kept as point lists rather than being painted
+straight onto the canvas — that also makes a resize redraw rather than stretch a
+bitmap. Once a stylus is seen, touch is ignored for the rest of that problem: on
+a tablet the palm lands before the pen does.
 
-The chosen mode sticks across problems — it is a way of working, not a detour —
-while the paper itself resets for each new problem. Mental Challenge has no pad
-at all, since working it out on paper is exactly what that mode excludes.
+The pad stays open across problems while the paper resets for each one. Mental
+Challenge has no pad at all, since working it out is exactly what that mode
+excludes.
 
-### Reading handwritten answers
+**Handwriting recognition was tried and removed.** A small MLP trained on MNIST
+scored 97.4% on held-out MNIST and was unusable in practice: MNIST is
+pen-on-paper, size-normalised and centred, and a finger on glass is a different
+distribution entirely. The lesson is recorded here rather than repeated — see
+`docs/design/` if it is ever revisited.
 
-**write answer → read answer → check → enter.** Recognition fills the answer box
-and stops there. It never submits, because a misread would record a wrong answer
-for a correct one and silently corrupt the per-skill measurements the app exists
-to produce — the one failure mode worth designing around.
+### Correcting an answer
 
-The classifier is a small MLP trained on MNIST by `scripts/train-digits.mjs`,
-kept in the repo so the model is reproducible rather than an opaque blob. Rerun
-it and it prints held-out accuracy before writing anything; the current weights
-score **97.38%**, quantised to int8 (~150 KB, lazily loaded but precached, since
-unlike sign-in it has to work offline).
-
-Two things carry the accuracy, and both are tested:
-
-- **Preprocessing reproduces MNIST's own normalisation** — 20×20 box, centred by
-  centre of mass inside 28×28, anti-aliased. Feeding a raw canvas crop instead
-  produces confident nonsense.
-- **Segmentation splits digits by horizontal overlap**, which keeps the two
-  strokes of a 4 or 7 together while separating digits written side by side, with
-  no reliance on stroke timing.
-
-`npm test` re-runs the shipped, quantised weights through the browser inference
-path against held-out MNIST, so a quantisation or indexing bug cannot pass
-unnoticed.
+**↩ back** returns to the previous problem with the answer pre-filled to edit. A
+typo would otherwise be recorded as a wrong answer and become a false data point
+in the very measurements the app exists to produce. A correction replaces the
+original record rather than appending, and keeps the original time: a typo does
+not mean the thinking was quicker. Not offered in Mental Challenge, where second
+thoughts are the thing being measured.
 
 ### Mental Challenge
 
