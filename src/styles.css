@@ -824,3 +824,50 @@ details summary::-webkit-details-marker {
     min-height: 0;
   }
 }
+
+/*
+ * Portrait on a tablet: everything on one screen, no scrolling. The pad gives
+ * up whatever height the problem, answer box and keypad need, rather than the
+ * page growing past the screen.
+ *
+ * Not applied on a phone, where there simply is not room for all of it and
+ * scrolling is the honest answer.
+ */
+@media (orientation: portrait) and (min-width: 700px) {
+  .session:has(.scratch.expanded) {
+    height: calc(100dvh - 40px);
+  }
+
+  /* Every pixel spent on spacing here comes straight out of the pad. */
+  .problem-area:has(.scratch.expanded) {
+    min-height: 0;
+    gap: 10px;
+    padding: 4px 0;
+  }
+
+  .problem-area:has(.scratch.expanded) .scratch-tools .btn {
+    min-height: 44px;
+  }
+
+  .problem-area:has(.scratch.expanded) .scratch-toggle {
+    min-height: 32px;
+    padding: 2px 10px;
+  }
+
+  .problem-area:has(.scratch.expanded) .scratch {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .problem-area:has(.scratch.expanded) .scratch-body {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .problem-area:has(.scratch.expanded) .scratch-canvas {
+    flex: 1;
+    height: auto;
+    min-height: 140px;
+  }
+}

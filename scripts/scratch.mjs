@@ -81,6 +81,7 @@ try {
   // The pad has to be worth writing on at every orientation.
   for (const [name, size] of [
     ['portrait', { width: 834, height: 1112 }],
+    ['small tablet portrait', { width: 768, height: 1024 }],
     ['landscape', { width: 1112, height: 834 }],
     ['phone', { width: 390, height: 844 }],
   ]) {
@@ -90,7 +91,11 @@ try {
     const pad = await page.locator('.scratch-canvas').boundingBox()
     const keys = await page.locator('.keypad').boundingBox()
     const share = (pad.width * pad.height) / (size.width * size.height)
-    if (share < 0.35) fail(`${name}: pad is only ${Math.round(share * 100)}% of the screen`)
+    const tablet = Math.min(size.width, size.height) >= 700
+    // A tablet trades pad height for fitting on one screen, so it gets a lower
+    // floor than a phone, which is allowed to scroll and keep a big pad.
+    const floor = tablet && size.height > size.width ? 0.19 : 0.35
+    if (share < floor) fail(`${name}: pad is only ${Math.round(share * 100)}% of the screen`)
     const landscape = size.width > size.height
     // Answering on the left, working space on the right.
     const beside = keys.x + keys.width <= pad.x + 5
@@ -120,14 +125,21 @@ try {
     if (landscape && !beside) fail(`${name}: the pad should sit to the right of the answer area`)
     if (!landscape && beside) fail(`${name}: pad should span the full width`)
 
-    if (landscape) {
-      // Landscape has to fit the screen: the pad is free to shrink here, so
-      // there is no reason to make the page scroll.
+    // A tablet must show everything at once; a phone may scroll.
+    if (tablet) {
       const scrolls = await page.evaluate(
         () => document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
       )
-      if (scrolls) fail(`${name}: the layout scrolls, it should fit the screen`)
+      if (scrolls) fail(`${name}: a tablet should fit on one screen without scrolling`)
+      const kb = await page.locator('.keypad').boundingBox()
+      const pt = await page.locator('.problem-prompt').boundingBox()
+      if (pt.y < 0 || kb.y + kb.height > size.height + 1) {
+        fail(`${name}: problem or keypad is off screen without scrolling`)
+      }
+      console.log(`ok  ${name}: problem, pad and keypad all fit on one screen`)
+    }
 
+    if (landscape) {
       // The keypad once sat in a full-height row and drifted to the bottom.
       const boxes = await page.locator('.answer-line-wrap').boundingBox()
       const gap = keys.y - (boxes.y + boxes.height)
