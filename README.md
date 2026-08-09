@@ -97,6 +97,36 @@ Once a stylus is seen, touch is ignored for the rest of that problem: on a table
 the palm lands before the pen does. The physical keyboard stays live while the
 pad is open, so on a laptop the answer can be typed without switching back.
 
+The chosen mode sticks across problems — it is a way of working, not a detour —
+while the paper itself resets for each new problem. Mental Challenge has no pad
+at all, since working it out on paper is exactly what that mode excludes.
+
+### Reading handwritten answers
+
+**write answer → read answer → check → enter.** Recognition fills the answer box
+and stops there. It never submits, because a misread would record a wrong answer
+for a correct one and silently corrupt the per-skill measurements the app exists
+to produce — the one failure mode worth designing around.
+
+The classifier is a small MLP trained on MNIST by `scripts/train-digits.mjs`,
+kept in the repo so the model is reproducible rather than an opaque blob. Rerun
+it and it prints held-out accuracy before writing anything; the current weights
+score **97.38%**, quantised to int8 (~150 KB, lazily loaded but precached, since
+unlike sign-in it has to work offline).
+
+Two things carry the accuracy, and both are tested:
+
+- **Preprocessing reproduces MNIST's own normalisation** — 20×20 box, centred by
+  centre of mass inside 28×28, anti-aliased. Feeding a raw canvas crop instead
+  produces confident nonsense.
+- **Segmentation splits digits by horizontal overlap**, which keeps the two
+  strokes of a 4 or 7 together while separating digits written side by side, with
+  no reliance on stroke timing.
+
+`npm test` re-runs the shipped, quantised weights through the browser inference
+path against held-out MNIST, so a quantisation or indexing bug cannot pass
+unnoticed.
+
 ### Mental Challenge
 
 2–5 minutes, no paper. Correct earns the skill's difficulty weight, wrong earns
