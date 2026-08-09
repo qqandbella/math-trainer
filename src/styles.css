@@ -684,11 +684,10 @@ details summary::-webkit-details-marker {
 
 .scratch {
   width: 100%;
-  max-width: 420px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
 }
 
 .scratch-toggle {
@@ -699,9 +698,11 @@ details summary::-webkit-details-marker {
 }
 
 .scratch-body {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
 }
 
 .scratch-body.hidden {
@@ -709,8 +710,10 @@ details summary::-webkit-details-marker {
 }
 
 .scratch-canvas {
-  /* Tall enough for long division, short enough to leave the keypad reachable. */
-  height: clamp(180px, 34vh, 340px);
+  /* Portrait: full width and as tall as the screen allows. Never shrink - the
+     surrounding flex column would otherwise squeeze it on a short screen. */
+  height: clamp(280px, 54vh, 640px);
+  flex-shrink: 0;
   width: 100%;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -743,4 +746,66 @@ details summary::-webkit-details-marker {
 /* The whole session scrolls when the pad is open on a short screen. */
 .session {
   overflow-y: auto;
+}
+
+/*
+ * Landscape: the pad takes the whole height on the left, and everything needed
+ * to answer - problem, boxes, keypad - stacks in a column on the right. Simply
+ * stacking them would leave the pad a shallow band on a short screen.
+ */
+@media (orientation: landscape) and (min-width: 760px) {
+  /* A session uses the whole screen; the 900px reading measure that suits the
+     dashboard just starves the pad here. */
+  .app:has(.session) {
+    max-width: none;
+  }
+
+  .problem-area {
+    display: grid;
+    /* Fills the available height so the pad spans it rather than sizing to the
+       answer column beside it. */
+    height: 100%;
+    display: grid;
+    grid-template-columns: 1fr minmax(300px, 380px);
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      'pad prompt'
+      'pad boxes'
+      'pad keys';
+    gap: 10px 18px;
+    align-items: start;
+    width: 100%;
+  }
+
+  .problem-area .problem-prompt {
+    grid-area: prompt;
+    font-size: clamp(24px, 3.2vw, 40px);
+  }
+
+  .problem-area .answer-line-wrap {
+    grid-area: boxes;
+  }
+
+  .problem-area .keypad {
+    grid-area: keys;
+    align-self: end;
+  }
+
+  .problem-area .scratch {
+    grid-area: pad;
+    height: 100%;
+    min-height: 0;
+  }
+
+  /* Fills the column rather than being a fixed-height band. */
+  .problem-area .scratch-canvas {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+    flex-shrink: 1;
+  }
+
+  .scratch-toggle {
+    align-self: flex-start;
+  }
 }

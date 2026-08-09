@@ -62,6 +62,31 @@ try {
   if (!(await page.locator('.answer-box').first().isVisible())) fail('answer box hidden')
   console.log('ok  opening the pad keeps the keypad and answer box on screen')
 
+  // The pad has to be worth writing on at every orientation.
+  for (const [name, size] of [
+    ['portrait', { width: 834, height: 1112 }],
+    ['landscape', { width: 1112, height: 834 }],
+    ['phone', { width: 390, height: 844 }],
+  ]) {
+    await page.setViewportSize(size)
+    await page.waitForTimeout(250)
+    const pad = await page.locator('.scratch-canvas').boundingBox()
+    const keys = await page.locator('.keypad').boundingBox()
+    const share = (pad.width * pad.height) / (size.width * size.height)
+    if (share < 0.35) fail(`${name}: pad is only ${Math.round(share * 100)}% of the screen`)
+    if (keys.y + keys.height > size.height + 2) fail(`${name}: keypad is off screen`)
+    const landscape = size.width > size.height
+    const beside = pad.x + pad.width <= keys.x + 5
+    if (landscape && !beside) fail(`${name}: answer area should sit beside the pad, not below`)
+    if (!landscape && beside) fail(`${name}: pad should span the full width`)
+    console.log(
+      `ok  ${name}: pad ${Math.round(pad.width)}x${Math.round(pad.height)} ` +
+        `(${Math.round(share * 100)}% of screen, ${beside ? 'answer beside' : 'full width'})`,
+    )
+  }
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.waitForTimeout(200)
+
   await drawStroke([[0.05, 0.2], [0.35, 0.2]])
   await drawStroke([[0.6, 0.6], [0.9, 0.6]])
   const two = await inkPixels()

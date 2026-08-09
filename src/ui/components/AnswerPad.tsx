@@ -133,7 +133,7 @@ export function AnswerPad({
 
   return (
     <>
-      <div>
+      <div className="answer-line-wrap">
         {needsRemainder && (
           <div className="answer-label">quotient and remainder</div>
         )}
