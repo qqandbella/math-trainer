@@ -3,6 +3,7 @@ import type { Attempt, Skill } from '../../core/types'
 import { useSession, type SessionSpec } from '../../app/useSession'
 import { useAppState } from '../../app/state'
 import { AnswerPad } from './AnswerPad'
+import { ScratchPad } from './ScratchPad'
 import { scoreMentalSession, type MentalScore } from '../../core/mental'
 import { curriculum } from '../../curriculum'
 import { saveAttempts } from '../../storage/db'
@@ -38,7 +39,9 @@ export function SessionRunner({
   const { recordSession, settings, skills } = useAppState()
   const session = useSession(spec)
   const [flash, setFlash] = useState(false)
+  const [mode, setMode] = useState<'answer' | 'scratch'>('answer')
   const savedRef = useRef(false)
+  const swipeStart = useRef<{ x: number; y: number } | null>(null)
   const flushedRef = useRef(0)
 
   const skillsById = useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills])
@@ -118,6 +121,33 @@ export function SessionRunner({
     onComplete,
   ])
 
+  const currentId = session.current?.id
+
+  // Every problem starts on the keypad; carrying scratch mode across problems
+  // would hide the next question behind a blank page.
+  useEffect(() => {
+    setMode('answer')
+  }, [currentId])
+
+  /**
+   * Horizontal swipe toggles the two modes. Started only outside the drawing
+   * surface, or every stroke would be read as a gesture.
+   */
+  const onSwipeStart = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
+    if ((event.target as HTMLElement).closest('.scratch-canvas')) return
+    swipeStart.current = { x: event.clientX, y: event.clientY }
+  }, [])
+
+  const onSwipeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
+    const start = swipeStart.current
+    swipeStart.current = null
+    if (!start) return
+    const dx = event.clientX - start.x
+    const dy = event.clientY - start.y
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+    setMode(dx < 0 ? 'scratch' : 'answer')
+  }, [])
+
   const handleSubmit = useCallback(
     (answer: number, remainder: number | null) => {
       const correct = session.submit(answer, remainder)
@@ -183,15 +213,30 @@ export function SessionRunner({
         <div className="progress-fill" style={{ width: `${Math.min(100, progress * 100)}%` }} />
       </div>
 
-      <div className={`problem-area${flash ? ' flash-correct' : ''}`}>
+      <div
+        className={`problem-area${flash ? ' flash-correct' : ''}${
+          mode === 'scratch' ? ' scratch-mode' : ''
+        }`}
+        onPointerDown={onSwipeStart}
+        onPointerUp={onSwipeEnd}
+      >
         <div className="problem-prompt">{current ? `${current.prompt} =` : ''}</div>
         {current && (
           <AnswerPad
             problem={current}
             onSubmit={handleSubmit}
             onSkip={spec.allowSkip ? session.skip : undefined}
+            compact={mode === 'scratch'}
           />
         )}
+        {current && mode === 'scratch' && <ScratchPad resetKey={current.id} />}
+        <button
+          type="button"
+          className="btn btn-ghost mode-toggle"
+          onClick={() => setMode(mode === 'answer' ? 'scratch' : 'answer')}
+        >
+          {mode === 'answer' ? '✎ scratch pad' : '⌨ enter answer'}
+        </button>
       </div>
 
       {session.phase === 'paused' && (

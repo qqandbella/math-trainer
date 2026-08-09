@@ -26,6 +26,7 @@ npm run parent       # parent gesture, TOTP enrollment, and the erase path
 npm run transfer     # export from one profile, import into another, twice
 npm run qr           # decode the enrollment QR and check it carries the right URL
 npm run migration    # seed a real v1 database and check the upgrade preserves it
+npm run scratch      # scratch pad: drawing, undo, mode switching, reset per problem
 ```
 
 ## How it works
@@ -82,6 +83,19 @@ Feedback defaults to **quiet**: correct answers flash green, wrong ones advance
 without comment, and every mistake is listed at the end with the right answer.
 For an already-cautious solver, flagging errors mid-session tends to slow them
 down further. Switch to immediate right/wrong in Parent → Settings.
+
+### Scratch pad
+
+Multi-digit work needs somewhere to write. Swipe left, or tap **scratch pad**, and
+the keypad gives way to a drawing surface with the problem still visible; swipe
+right or tap **enter answer** to come back. Nothing is stored — this is paper,
+not data.
+
+Strokes are kept as point lists rather than being flattened into the canvas, so
+undo is a real operation and resizing redraws rather than stretching a bitmap.
+Once a stylus is seen, touch is ignored for the rest of that problem: on a tablet
+the palm lands before the pen does. The physical keyboard stays live while the
+pad is open, so on a laptop the answer can be typed without switching back.
 
 ### Mental Challenge
 

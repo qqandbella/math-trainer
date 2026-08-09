@@ -5,6 +5,8 @@ interface Props {
   problem: Problem
   onSubmit(answer: number, remainder: number | null): void
   onSkip?: (() => void) | undefined
+  /** Shows the answer boxes without the keypad, for scratch-pad mode. */
+  compact?: boolean
 }
 
 const MAX_DIGITS = 12
@@ -16,7 +18,7 @@ const MAX_DIGITS = 12
  * Physical keys are wired alongside the on-screen pad because the same build
  * runs on a laptop, where typing is far faster than tapping.
  */
-export function AnswerPad({ problem, onSubmit, onSkip }: Props): ReactNode {
+export function AnswerPad({ problem, onSubmit, onSkip, compact = false }: Props): ReactNode {
   const needsRemainder = problem.remainder !== undefined
 
   /**
@@ -134,6 +136,7 @@ export function AnswerPad({ problem, onSubmit, onSkip }: Props): ReactNode {
         </div>
       </div>
 
+      {compact ? null : (
       <div className="keypad">
         {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map((digit) => (
           <button key={digit} type="button" className="key" onClick={() => pressDigit(digit)}>
@@ -179,6 +182,7 @@ export function AnswerPad({ problem, onSubmit, onSkip }: Props): ReactNode {
           </button>
         )}
       </div>
+      )}
     </>
   )
 }
