@@ -119,6 +119,21 @@ try {
     }
     if (landscape && !beside) fail(`${name}: the pad should sit to the right of the answer area`)
     if (!landscape && beside) fail(`${name}: pad should span the full width`)
+
+    if (landscape) {
+      // Landscape has to fit the screen: the pad is free to shrink here, so
+      // there is no reason to make the page scroll.
+      const scrolls = await page.evaluate(
+        () => document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
+      )
+      if (scrolls) fail(`${name}: the layout scrolls, it should fit the screen`)
+
+      // The keypad once sat in a full-height row and drifted to the bottom.
+      const boxes = await page.locator('.answer-line-wrap').boundingBox()
+      const gap = keys.y - (boxes.y + boxes.height)
+      if (gap > 40) fail(`${name}: ${Math.round(gap)}px gap between the answer box and the keypad`)
+      console.log(`ok  ${name}: fits without scrolling, ${Math.round(gap)}px under the answer box`)
+    }
     console.log(
       `ok  ${name}: pad ${Math.round(pad.width)}x${Math.round(pad.height)} ` +
         `(${Math.round(share * 100)}% of screen, ${beside ? 'answer left / pad right' : 'full width'})`,
