@@ -11,6 +11,8 @@ export interface SessionSpec {
   pauseBudget: number
   /** Mental mode allows an explicit skip, which is scored as a penalty. */
   allowSkip: boolean
+  /** Mental mode has no scratch pad: working it out on paper is the thing it excludes. */
+  allowScratch: boolean
 }
 
 export type SessionPhase = 'running' | 'paused' | 'finished'

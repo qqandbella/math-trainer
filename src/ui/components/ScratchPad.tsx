@@ -10,6 +10,14 @@ type Stroke = Point[]
 interface Props {
   /** Strokes reset when this changes, so each problem starts on clean paper. */
   resetKey: string
+  /** Asked to read the writing as an answer. Receives a copy of the strokes. */
+  onRead?: ((strokes: Stroke[]) => void) | undefined
+  /**
+   * Whether the pad is on screen. The component stays mounted when hidden so
+   * the working out survives a trip to the keypad, but a hidden canvas has no
+   * size - so it must be redrawn explicitly when it comes back.
+   */
+  visible?: boolean
 }
 
 const INK = '#16233b'
@@ -23,7 +31,7 @@ const LINE_WIDTH = 2.4
  * stretching a bitmap. Nothing is persisted: this is scratch paper, and the
  * measurement that matters is the answer and the time, not the workings.
  */
-export function ScratchPad({ resetKey }: Props): ReactNode {
+export function ScratchPad({ resetKey, onRead, visible = true }: Props): ReactNode {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const strokesRef = useRef<Stroke[]>([])
   const currentRef = useRef<Stroke | null>(null)
@@ -88,6 +96,13 @@ export function ScratchPad({ resetKey }: Props): ReactNode {
     if (canvasRef.current) observer.observe(canvasRef.current)
     return () => observer.disconnect()
   }, [resize])
+
+  // ResizeObserver does not reliably fire on a display change, so becoming
+  // visible has to trigger the redraw itself. Without this the pad comes back
+  // blank and the work looks lost.
+  useEffect(() => {
+    if (visible) resize()
+  }, [visible, resize])
 
   useEffect(() => {
     strokesRef.current = []
@@ -157,12 +172,22 @@ export function ScratchPad({ resetKey }: Props): ReactNode {
         onPointerLeave={endStroke}
       />
       <div className="scratch-tools">
-        <button type="button" className="btn btn-ghost" onClick={undo} disabled={isEmpty}>
+        <button type="button" className="btn" onClick={undo} disabled={isEmpty}>
           undo
         </button>
-        <button type="button" className="btn btn-ghost" onClick={clear} disabled={isEmpty}>
+        <button type="button" className="btn" onClick={clear} disabled={isEmpty}>
           clear
         </button>
+        {onRead && (
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={isEmpty}
+            onClick={() => onRead(strokesRef.current.map((stroke) => stroke.slice()))}
+          >
+            read answer
+          </button>
+        )}
       </div>
     </div>
   )

@@ -355,6 +355,7 @@ function Calibration({ onDone }: { onDone(): void }): ReactNode {
       problems: generateBatch(chosen, rng),
       pauseBudget: 1,
       allowSkip: false,
+      allowScratch: true,
     }
   }, [practicePool, stats, settings.activeLearnerId])
 

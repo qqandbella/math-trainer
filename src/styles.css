@@ -727,3 +727,13 @@ details summary::-webkit-details-marker {
   font-size: 14px;
   min-height: 40px;
 }
+
+.scratch-host {
+  flex: 1;
+  width: 100%;
+  display: flex;
+}
+
+.scratch-host.hidden {
+  display: none;
+}

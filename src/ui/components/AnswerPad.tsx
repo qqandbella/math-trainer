@@ -9,6 +9,12 @@ interface Props {
   compact?: boolean
   /** Tapping a box in compact mode asks for the keypad back. */
   onRequestKeypad?: (() => void) | undefined
+  /**
+   * Fills the answer box from outside - used by handwriting recognition. The
+   * nonce lets the same value be applied twice. Never auto-submits: a misread
+   * has to be visible and correctable before it can count.
+   */
+  preset?: { value: string; nonce: number } | undefined
 }
 
 const MAX_DIGITS = 12
@@ -26,6 +32,7 @@ export function AnswerPad({
   onSkip,
   compact = false,
   onRequestKeypad,
+  preset,
 }: Props): ReactNode {
   const needsRemainder = problem.remainder !== undefined
 
@@ -52,6 +59,18 @@ export function AnswerPad({
     fieldRef.current = 'primary'
     repaint()
   }, [problem.id])
+
+  // Applied in an effect, not during render: the displayed value is read from
+  // the ref at the top of the render, so mutating it here would only appear on
+  // some later, unrelated re-render.
+  const presetNonce = useRef(-1)
+  useEffect(() => {
+    if (!preset || preset.nonce === presetNonce.current) return
+    presetNonce.current = preset.nonce
+    primaryRef.current = preset.value.slice(0, MAX_DIGITS)
+    fieldRef.current = 'primary'
+    repaint()
+  }, [preset])
 
   const canSubmit = primary.length > 0 && (!needsRemainder || remainder.length > 0)
 

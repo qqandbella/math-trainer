@@ -58,6 +58,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
         problems: generateBatch(chosen, rng),
         pauseBudget,
         allowSkip: false,
+        allowScratch: true,
       }
     }
 
@@ -71,6 +72,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
         durationSec: preset.durationSec,
         pauseBudget,
         allowSkip: false,
+        allowScratch: true,
       }
     }
 
@@ -83,6 +85,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
         durationSec: mentalDuration,
         pauseBudget: 1,
         allowSkip: true,
+        allowScratch: false,
       }
     }
 
@@ -94,6 +97,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
       problems: generateBatch(chosen, rng),
       pauseBudget,
       allowSkip: false,
+      allowScratch: true,
     }
   }, [
     mode,
