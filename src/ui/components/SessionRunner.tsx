@@ -45,6 +45,8 @@ export function SessionRunner({
   const swipeLast = useRef<{ x: number; y: number } | null>(null)
   const [preset, setPreset] = useState<{ value: string; nonce: number } | undefined>(undefined)
   const [reading, setReading] = useState('')
+  const [pending, setPending] = useState<string | null>(null)
+  const handleSubmitRef = useRef<((answer: number, remainder: number | null) => void) | null>(null)
   const flushedRef = useRef(0)
 
   const skillsById = useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills])
@@ -131,8 +133,12 @@ export function SessionRunner({
   // paper and any pending reading reset.
   useEffect(() => {
     setReading('')
-    setPreset(undefined)
-  }, [currentId])
+    // Coming back to an answered problem pre-fills what was entered, so a typo
+    // is a correction rather than a retype.
+    setPending(null)
+    const previous = session.answerForCurrent
+    setPreset(previous === null ? undefined : { value: previous, nonce: Date.now() })
+  }, [currentId, session.answerForCurrent])
 
   /**
    * Horizontal swipe toggles the two modes. Started only outside the drawing
@@ -184,14 +190,24 @@ export function SessionRunner({
       setReading('Could not read that — try writing the digits a little larger.')
       return
     }
+    // Stay on the pad: the answer box above already shows the reading, and the
+    // submit button carries it, so there is nothing to go back to the keypad for.
     setPreset({ value: result.text, nonce: Date.now() })
-    setMode('answer')
+    setPending(result.text)
     setReading(
       result.weakest < 0.8
-        ? `Read "${result.text}" — not certain, please check before entering.`
-        : `Read "${result.text}" — check it, then press enter.`,
+        ? `Read "${result.text}" — not certain, check it before submitting.`
+        : `Read "${result.text}" — check it, then submit.`,
     )
   }, [])
+
+  const submitPending = useCallback(() => {
+    if (pending === null) return
+    const value = Number(pending)
+    setPending(null)
+    setReading('')
+    handleSubmitRef.current?.(value, null)
+  }, [pending])
 
   const handleSubmit = useCallback(
     (answer: number, remainder: number | null) => {
@@ -203,6 +219,8 @@ export function SessionRunner({
     },
     [session],
   )
+
+  handleSubmitRef.current = handleSubmit
 
   const handleRestart = useCallback(() => {
     savedRef.current = false
@@ -235,6 +253,11 @@ export function SessionRunner({
         <button type="button" className="btn btn-ghost" onClick={onExit}>
           ← exit
         </button>
+        {session.canGoBack && (
+          <button type="button" className="btn btn-ghost" onClick={session.goBack}>
+            ↩ back
+          </button>
+        )}
         {secondsLeft !== undefined ? (
           <span className={`big-timer${secondsLeft <= 15 ? ' urgent' : ''}`}>
             {formatClock(secondsLeft)}
@@ -285,22 +308,26 @@ export function SessionRunner({
             <ScratchPad
               resetKey={current.id}
               onRead={handleRead}
+              pending={pending}
+              onSubmitPending={submitPending}
+              onAnswerChanged={() => setPending(null)}
+              onUseKeypad={() => setMode('answer')}
               visible={mode === 'scratch'}
             />
           </div>
         )}
-        {reading && mode === 'answer' && (
+        {reading && (
           <p className="faint center" style={{ margin: 0 }}>
             {reading}
           </p>
         )}
-        {spec.allowScratch && (
+        {spec.allowScratch && mode === 'answer' && (
           <button
             type="button"
             className="btn btn-ghost mode-toggle"
-            onClick={() => setMode(mode === 'answer' ? 'scratch' : 'answer')}
+            onClick={() => setMode('scratch')}
           >
-            {mode === 'answer' ? '✎ scratch pad' : '⌨ enter answer'}
+            ✎ scratch pad
           </button>
         )}
       </div>

@@ -13,6 +13,8 @@ export interface SessionSpec {
   allowSkip: boolean
   /** Mental mode has no scratch pad: working it out on paper is the thing it excludes. */
   allowScratch: boolean
+  /** Whether a submitted answer can be revisited and corrected. */
+  allowBack: boolean
 }
 
 export type SessionPhase = 'running' | 'paused' | 'finished'
@@ -20,6 +22,10 @@ export type SessionPhase = 'running' | 'paused' | 'finished'
 export interface SessionApi {
   phase: SessionPhase
   index: number
+  canGoBack: boolean
+  goBack(): void
+  /** The answer already given for the current problem, if it was answered. */
+  answerForCurrent: string | null
   total: number
   current: Problem | undefined
   attempts: Attempt[]
@@ -50,7 +56,13 @@ function newId(): string {
 export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi {
   const [sessionId, setSessionId] = useState(newId)
   const [index, setIndex] = useState(0)
-  const [attempts, setAttempts] = useState<Attempt[]>([])
+  // Indexed by problem position so an answer can be replaced in place when the
+  // learner goes back to correct it.
+  const [attemptsByIndex, setAttemptsByIndex] = useState<(Attempt | undefined)[]>([])
+  const attempts = useMemo(
+    () => attemptsByIndex.filter((a): a is Attempt => a !== undefined),
+    [attemptsByIndex],
+  )
   const [phase, setPhase] = useState<SessionPhase>('running')
   const [pausesUsed, setPausesUsed] = useState(0)
   const [startedAt] = useState(() => Date.now())
@@ -103,8 +115,11 @@ export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi
         given === problem.answer &&
         (problem.remainder === undefined || (givenRemainder ?? null) === problem.remainder)
 
+      const existing = attemptsByIndex[index]
       const attempt: Attempt = {
-        id: newId(),
+        // Reuse the id so a correction replaces the record everywhere rather
+        // than adding a second attempt at the same problem.
+        id: existing?.id ?? newId(),
         learnerId: spec.learnerId,
         sessionId,
         skillId: problem.skillId,
@@ -112,17 +127,23 @@ export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi
         answer: problem.answer,
         given,
         correct,
-        ms,
+        // Keep the original thinking time; only the answer is being corrected.
+        ms: existing ? existing.ms : ms,
         at: Date.now(),
       }
+      if (existing) attempt.corrected = true
       if (problem.remainder !== undefined) {
         attempt.remainder = problem.remainder
         attempt.givenRemainder = givenRemainder ?? null
       }
-      setAttempts((prev) => [...prev, attempt])
+      setAttemptsByIndex((prev) => {
+        const next = prev.slice()
+        next[index] = attempt
+        return next
+      })
       return correct
     },
-    [sessionId, spec.learnerId],
+    [sessionId, spec.learnerId, attemptsByIndex, index],
   )
 
   const advance = useCallback(() => {
@@ -171,10 +192,16 @@ export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi
     setPhase('running')
   }, [phase])
 
+  const goBack = useCallback(() => {
+    if (!spec.allowBack) return
+    setIndex((prev) => Math.max(0, prev - 1))
+    setPhase('running')
+  }, [spec.allowBack])
+
   const restart = useCallback(() => {
     setSessionId(newId())
     setIndex(0)
-    setAttempts([])
+    setAttemptsByIndex([])
     setPausesUsed(0)
     setPhase('running')
     pausedAt.current = null
@@ -210,9 +237,13 @@ export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi
     isTimed,
   ])
 
+  const answered = attemptsByIndex[index]
   return {
     phase,
     index,
+    canGoBack: spec.allowBack && index > 0,
+    goBack,
+    answerForCurrent: answered && answered.given !== null ? String(answered.given) : null,
     total: isTimed ? attempts.length : spec.problems.length,
     current,
     attempts,

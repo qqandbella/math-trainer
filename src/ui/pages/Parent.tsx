@@ -356,6 +356,7 @@ function Calibration({ onDone }: { onDone(): void }): ReactNode {
       pauseBudget: 1,
       allowSkip: false,
       allowScratch: true,
+      allowBack: true,
     }
   }, [practicePool, stats, settings.activeLearnerId])
 

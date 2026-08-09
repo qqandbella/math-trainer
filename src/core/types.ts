@@ -119,6 +119,13 @@ export interface Attempt {
   /** Milliseconds spent on this problem, excluding paused time. */
   ms: number
   at: number
+  /**
+   * Set when the learner went back and changed an answer.
+   *
+   * The original time is kept: a typo does not mean the thinking was quicker,
+   * and resetting the clock would make corrections look like fast answers.
+   */
+  corrected?: boolean
 }
 
 export type SessionMode = 'daily' | 'custom' | 'timed' | 'mental' | 'calibration'

@@ -19,7 +19,8 @@
     "transfer": "node scripts/transfer.mjs",
     "qr": "node scripts/qr.mjs",
     "migration": "node scripts/migration.mjs",
-    "scratch": "node scripts/scratch.mjs"
+    "scratch": "node scripts/scratch.mjs",
+    "correct": "node scripts/correct.mjs"
   },
   "dependencies": {
     "firebase": "^12.17.1",

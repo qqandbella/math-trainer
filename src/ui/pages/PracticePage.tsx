@@ -59,6 +59,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
         pauseBudget,
         allowSkip: false,
         allowScratch: true,
+        allowBack: true,
       }
     }
 
@@ -73,6 +74,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
         pauseBudget,
         allowSkip: false,
         allowScratch: true,
+        allowBack: true,
       }
     }
 
@@ -86,6 +88,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
         pauseBudget: 1,
         allowSkip: true,
         allowScratch: false,
+        allowBack: false,
       }
     }
 
@@ -98,6 +101,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
       pauseBudget,
       allowSkip: false,
       allowScratch: true,
+      allowBack: true,
     }
   }, [
     mode,

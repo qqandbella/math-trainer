@@ -23,7 +23,7 @@ const ensureMode = async (want) => {
     await page.getByRole('button', { name: /scratch pad/ }).click()
     await page.locator('.scratch-canvas').waitFor({ timeout: 5000 })
   } else if (want === 'answer' && inScratch) {
-    await page.getByRole('button', { name: /enter answer/ }).click()
+    await page.getByRole('button', { name: 'use the keypad instead' }).click()
     await page.locator('.keypad').waitFor({ timeout: 5000 })
   }
 }
@@ -33,8 +33,8 @@ const ensureMode = async (want) => {
  * The page can be scrolled such that the canvas starts above the viewport, and
  * mouse events at negative coordinates land nowhere.
  */
-const drawStroke = async (points) => {
-  const locator = page.locator('.scratch-canvas')
+const drawStroke = async (points, selector = '.scratch-canvas') => {
+  const locator = page.locator(selector)
   await locator.scrollIntoViewIfNeeded()
   const box = await locator.boundingBox()
   const view = page.viewportSize()
@@ -54,14 +54,14 @@ const drawStroke = async (points) => {
   await page.mouse.up()
 }
 
-const inkPixels = () => page.evaluate(() => {
-  const c = document.querySelector('.scratch-canvas')
+const inkPixels = (selector = '.scratch-canvas') => page.evaluate((sel) => {
+  const c = document.querySelector(sel)
   const ctx = c.getContext('2d')
   const d = ctx.getImageData(0, 0, c.width, c.height).data
   let n = 0
   for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++
   return n
-})
+}, selector)
 
 try {
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
@@ -78,6 +78,59 @@ try {
   if (!promptInScratch) fail('problem is not visible in scratch mode')
   if (await page.locator('.keypad').count()) fail('keypad still taking space in scratch mode')
   if (!(await page.locator('.scratch-canvas').isVisible())) fail('scratch canvas not visible')
+  if (!(await page.locator('.answer-canvas').isVisible())) {
+    fail('no separate area to write the answer in')
+  }
+  const workBox = await page.locator('.scratch-canvas').boundingBox()
+  const ansBox = await page.locator('.answer-canvas').boundingBox()
+  // Either stacked or side by side is fine; overlapping is not.
+  const overlaps =
+    ansBox.x < workBox.x + workBox.width - 1 &&
+    workBox.x < ansBox.x + ansBox.width - 1 &&
+    ansBox.y < workBox.y + workBox.height - 1 &&
+    workBox.y < ansBox.y + ansBox.height - 1
+  if (overlaps) fail('the answer area overlaps the working area')
+  const view = page.viewportSize()
+  if (ansBox.y + ansBox.height > view.height) {
+    fail(
+      `the answer area is below the fold (ends at ${Math.round(ansBox.y + ansBox.height)}px, ` +
+        `viewport is ${view.height}px) - it would never be seen`,
+    )
+  }
+  console.log('ok  the answer area is separate from the working area, and on screen')
+
+  // Both orientations must give each surface usable room.
+  for (const [name, size] of [
+    ['portrait', { width: 834, height: 1112 }],
+    ['landscape', { width: 1112, height: 834 }],
+    ['phone portrait', { width: 390, height: 844 }],
+  ]) {
+    await page.setViewportSize(size)
+    await page.waitForTimeout(250)
+    const work = await page.locator('.scratch-canvas').boundingBox()
+    const ans = await page.locator('.answer-canvas').boundingBox()
+    if (!work || !ans) fail(`${name}: a drawing surface disappeared`)
+    if (ans.y + ans.height > size.height + 1) {
+      fail(`${name}: the answer area runs off the bottom of the screen`)
+    }
+    if (ans.height < 70) fail(`${name}: the answer area is only ${Math.round(ans.height)}px tall`)
+    if (work.height < 120) fail(`${name}: the working area is only ${Math.round(work.height)}px tall`)
+    const layout = ans.x > work.x + work.width - 10 ? 'side by side' : 'stacked'
+    if (layout === 'stacked') {
+      const share = work.height / (work.height + ans.height)
+      if (share < 0.6 || share > 0.85) {
+        fail(`${name}: working area is ${Math.round(share * 100)}% of the pad, wanted 70-80%`)
+      }
+    }
+    if (!(await page.getByRole('button', { name: 'use the keypad instead' }).isVisible())) {
+      fail(`${name}: no way to reach the keypad from the pad`)
+    }
+    console.log(
+      `ok  ${name}: work ${Math.round(work.width)}x${Math.round(work.height)}, ` +
+        `answer ${Math.round(ans.width)}x${Math.round(ans.height)} (${layout})`,
+    )
+  }
+  await page.setViewportSize({ width: 1280, height: 720 })
   if (!(await page.locator('.answer-box').first().isVisible())) fail('answer box hidden in scratch mode')
   console.log(`ok  scratch mode keeps the problem visible ("${promptInScratch}") and drops the keypad`)
 
@@ -89,9 +142,30 @@ try {
   if (drawn < 100) fail(`drawing produced almost no ink (${drawn} px)`)
   console.log(`ok  drawing works (${drawn} ink pixels)`)
 
-  await page.getByRole('button', { name: 'undo' }).click()
-  if ((await inkPixels()) !== 0) fail('undo did not remove the stroke')
-  console.log('ok  undo removes a stroke')
+  // Erasing must remove only what it is dragged over. Two well-separated
+  // strokes, erase one, and the other has to survive.
+  await page.getByRole('button', { name: 'clear', exact: true }).click()
+  await drawStroke([[0.05, 0.15], [0.35, 0.15]])
+  await drawStroke([[0.6, 0.6], [0.9, 0.6]])
+  const twoStrokes = await inkPixels()
+  if (twoStrokes < 100) fail('two-stroke setup did not draw')
+
+  await page.getByRole('button', { name: /erase/ }).click()
+  await drawStroke([[0.05, 0.15], [0.35, 0.15]])
+  const oneLeft = await inkPixels()
+  if (oneLeft === 0) fail('the eraser wiped everything, not just what it touched')
+  if (oneLeft >= twoStrokes * 0.9) fail(`erasing removed too little (${twoStrokes} -> ${oneLeft})`)
+  console.log(`ok  eraser removes only what it touches (${twoStrokes} -> ${oneLeft} px)`)
+
+  await page.getByRole('button', { name: /write/ }).click()
+  await page.getByRole('button', { name: 'clear', exact: true }).click()
+  if ((await inkPixels()) !== 0) fail('clear did not empty the working area')
+  console.log('ok  clear empties the working area')
+  await drawStroke([[0.05, 0.1], [0.4, 0.2]])
+
+  if (await page.getByRole('button', { name: 'undo' }).count()) {
+    fail('undo is still present; it was meant to be replaced by the eraser')
+  }
 
   // Typing must still reach the answer box while the pad is open.
   await page.keyboard.type('123')
@@ -129,8 +203,8 @@ try {
 
   await ensureMode('scratch')
   const toolBox = await page.locator('.scratch-tools .btn').first().boundingBox()
-  if (toolBox.height < 44) fail(`undo/clear too small to hit: ${toolBox.height}px tall`)
-  console.log(`ok  undo/clear are ${Math.round(toolBox.height)}px tall (>=44 is the touch target minimum)`)
+  if (toolBox.height < 44) fail(`pad tools too small to hit: ${toolBox.height}px tall`)
+  console.log(`ok  pad tools are ${Math.round(toolBox.height)}px tall (>=44 touch minimum)`)
   await ensureMode('answer')
 
   // Scratch must not carry over to the next problem.
@@ -177,22 +251,62 @@ try {
   )
 
   /* --- handwriting is read into the answer box, never auto-submitted ------- */
-  await page.getByRole('button', { name: 'clear' }).first().click()
-  // A single tall vertical stroke: unambiguously a 1.
+  await ensureMode('scratch')
+  // Deliberately leave working-out on the pad: recognition must ignore it.
+  const workingOut = []
+  for (let i = 0; i <= 25; i++) workingOut.push([0.1 + i * 0.03, 0.3 + Math.sin(i / 2) * 0.08])
+  await drawStroke(workingOut)
+  if ((await inkPixels()) < 100) fail('working-out did not register')
+
+  // A single tall vertical stroke in the answer strip: unambiguously a 1.
   const one = []
-  for (let i = 0; i <= 20; i++) one.push([0.3, 0.1 + i * 0.03])
-  await drawStroke(one)
-  if ((await inkPixels()) < 50) fail('the written digit did not register')
+  for (let i = 0; i <= 20; i++) one.push([0.3, 0.08 + i * 0.042])
+  await drawStroke(one, '.answer-canvas')
+  if ((await inkPixels('.answer-canvas')) < 50) fail('the written answer did not register')
   const countBefore = (await page.locator('.session-top').innerText()).trim()
-  await page.getByRole('button', { name: 'read answer' }).click()
-  await page.locator('.keypad').waitFor({ timeout: 5000 })
+  await page.getByRole('button', { name: 'read', exact: true }).click()
+  await page.getByRole('button', { name: /^submit / }).waitFor({ timeout: 5000 })
+  if (!(await page.locator('.scratch-canvas').isVisible())) {
+    fail('reading kicked us out of the pad instead of offering to submit in place')
+  }
+  console.log('ok  reading stays on the pad and offers submit in place')
+
+  // A label the same colour as its background is invisible, which is exactly
+  // how this button shipped once.
+  const legible = await page.getByRole('button', { name: /^submit / }).evaluate((el) => {
+    const style = getComputedStyle(el)
+    return {
+      text: el.textContent.trim(),
+      color: style.color,
+      background: style.backgroundColor,
+    }
+  })
+  if (!legible.text) fail('the submit button has no label')
+  if (legible.color === legible.background) {
+    fail(`submit button is invisible: text and background are both ${legible.color}`)
+  }
+  console.log(`ok  submit button reads "${legible.text}" and is legible`)
   const readValue = (await page.locator('.answer-box').first().innerText()).trim()
   if (!/^\d+$/.test(readValue)) fail(`recognition did not fill the answer box, saw "${readValue}"`)
-  console.log(`ok  handwriting read into the answer box as "${readValue}"`)
+  if (readValue.length !== 1) {
+    fail(`recognition read the working-out too: got "${readValue}", expected a single digit`)
+  }
+  console.log(`ok  handwriting read into the answer box as "${readValue}" (working-out ignored)`)
 
   const countAfter = (await page.locator('.session-top').innerText()).trim()
   if (countBefore !== countAfter) fail('recognition auto-submitted instead of waiting for confirmation')
-  console.log('ok  recognition never submits on its own - the answer waits for enter')
+  console.log('ok  recognition never submits on its own - it waits for confirmation')
+
+  // Confirming submits and advances, all without leaving the pad.
+  await page.getByRole('button', { name: /^submit / }).click()
+  await page.waitForFunction((c) => {
+    const el = document.querySelector('.session-top')
+    return el && el.innerText.trim() !== c
+  }, countBefore, { timeout: 5000 })
+  if (!(await page.locator('.scratch-canvas').isVisible())) {
+    fail('submitting from the pad dropped back to the keypad')
+  }
+  console.log('ok  submitting from the pad advances and stays on the pad')
 
   /* --- Mental Challenge must not offer a scratch pad ---------------------- */
   await page.goto(`${APP_URL}#/`, { waitUntil: 'domcontentloaded' })
