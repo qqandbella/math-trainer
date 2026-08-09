@@ -17,18 +17,26 @@ import { classify, MODEL_ACCURACY } from './infer'
 const MNIST_DIR = process.env.MNIST_DIR ?? '/tmp/mnist'
 const hasDataset = existsSync(join(MNIST_DIR, 't10k-images-idx3-ubyte.gz'))
 
-describe.skipIf(!hasDataset)('digit classifier', () => {
+/**
+ * Loaded lazily inside each test: a describe body runs even when skipIf marks
+ * it skipped, so reading the files here would break any machine without the
+ * dataset - as CI demonstrated.
+ */
+function loadTestSet() {
   const images = gunzipSync(readFileSync(join(MNIST_DIR, 't10k-images-idx3-ubyte.gz')))
   const labels = gunzipSync(readFileSync(join(MNIST_DIR, 't10k-labels-idx1-ubyte.gz')))
   const count = images.readUInt32BE(4)
-
   const imageAt = (n: number): Float32Array => {
     const pixels = new Float32Array(784)
     for (let i = 0; i < 784; i++) pixels[i] = (images[16 + n * 784 + i] as number) / 255
     return pixels
   }
+  return { labels, count, imageAt }
+}
 
+describe.skipIf(!hasDataset)('digit classifier', () => {
   it('reproduces the trained accuracy after quantisation', () => {
+    const { labels, count, imageAt } = loadTestSet()
     let correct = 0
     for (let n = 0; n < count; n++) {
       if (classify(imageAt(n)).digit === labels[8 + n]) correct++
@@ -39,6 +47,7 @@ describe.skipIf(!hasDataset)('digit classifier', () => {
   })
 
   it('is confident when it is right and less so when it is wrong', () => {
+    const { labels, imageAt } = loadTestSet()
     let confidentCorrect = 0
     let confidentTotal = 0
     for (let n = 0; n < 2000; n++) {
