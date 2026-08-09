@@ -7,6 +7,8 @@ interface Props {
   onSkip?: (() => void) | undefined
   /** Shows the answer boxes without the keypad, for scratch-pad mode. */
   compact?: boolean
+  /** Tapping a box in compact mode asks for the keypad back. */
+  onRequestKeypad?: (() => void) | undefined
 }
 
 const MAX_DIGITS = 12
@@ -18,7 +20,13 @@ const MAX_DIGITS = 12
  * Physical keys are wired alongside the on-screen pad because the same build
  * runs on a laptop, where typing is far faster than tapping.
  */
-export function AnswerPad({ problem, onSubmit, onSkip, compact = false }: Props): ReactNode {
+export function AnswerPad({
+  problem,
+  onSubmit,
+  onSkip,
+  compact = false,
+  onRequestKeypad,
+}: Props): ReactNode {
   const needsRemainder = problem.remainder !== undefined
 
   /**
@@ -117,7 +125,10 @@ export function AnswerPad({ problem, onSubmit, onSkip, compact = false }: Props)
           <button
             type="button"
             className={`answer-box${field === 'primary' ? ' active' : ''}`}
-            onClick={() => setField('primary')}
+            onClick={() => {
+              setField('primary')
+              if (compact) onRequestKeypad?.()
+            }}
           >
             {primary || <span className="placeholder">?</span>}
           </button>
@@ -127,7 +138,10 @@ export function AnswerPad({ problem, onSubmit, onSkip, compact = false }: Props)
               <button
                 type="button"
                 className={`answer-box small${field === 'remainder' ? ' active' : ''}`}
-                onClick={() => setField('remainder')}
+                onClick={() => {
+                  setField('remainder')
+                  if (compact) onRequestKeypad?.()
+                }}
               >
                 {remainder || <span className="placeholder">?</span>}
               </button>

@@ -65,6 +65,41 @@ try {
   await page.locator('.keypad').waitFor({ timeout: 5000 })
   console.log('ok  switches back to the keypad')
 
+  // Tapping the answer box must bring the keypad back: in scratch mode it is
+  // otherwise impossible to answer on a touch device.
+  await page.getByRole('button', { name: /scratch pad/ }).click()
+  await page.locator('.scratch-canvas').waitFor()
+  await page.locator('.answer-box').first().click()
+  await page.locator('.keypad').waitFor({ timeout: 5000 })
+  console.log('ok  tapping the answer box returns to the keypad')
+
+  // Swipe left into scratch, swipe right back out.
+  const prompt = page.locator('.problem-prompt')
+  const pb = await prompt.boundingBox()
+  const swipe = async (dx) => {
+    await page.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2)
+    await page.mouse.down()
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(pb.x + pb.width / 2 + (dx * i) / 10, pb.y + pb.height / 2)
+    }
+    await page.mouse.up()
+  }
+  await swipe(-140)
+  await page.locator('.scratch-canvas').waitFor({ timeout: 5000 })
+  console.log('ok  swipe left opens the scratch pad')
+  await swipe(140)
+  await page.locator('.keypad').waitFor({ timeout: 5000 })
+  console.log('ok  swipe right returns to the keypad')
+
+  await page.getByRole('button', { name: /scratch pad/ }).click()
+  await page.locator('.scratch-canvas').waitFor()
+  const toolBox = await page.locator('.scratch-tools .btn').first().boundingBox()
+  if (toolBox.height < 44) fail(`undo/clear too small to hit: ${toolBox.height}px tall`)
+  console.log(`ok  undo/clear are ${Math.round(toolBox.height)}px tall (>=44 is the touch target minimum)`)
+  // Leave on the keypad so the next block starts from a known mode.
+  await page.getByRole('button', { name: /enter answer/ }).click()
+  await page.locator('.keypad').waitFor()
+
   // Scratch must not carry over to the next problem.
   await page.getByRole('button', { name: /scratch pad/ }).click()
   const box2 = await page.locator('.scratch-canvas').boundingBox()

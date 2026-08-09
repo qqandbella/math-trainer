@@ -681,6 +681,11 @@ details summary::-webkit-details-marker {
   gap: 10px;
 }
 
+/* Horizontal gestures belong to the mode switch; vertical scrolling does not. */
+.problem-area {
+  touch-action: pan-y;
+}
+
 .problem-area.scratch-mode .problem-prompt {
   font-size: clamp(24px, 5vw, 34px);
 }
@@ -707,13 +712,15 @@ details summary::-webkit-details-marker {
 
 .scratch-tools {
   display: flex;
-  justify-content: flex-end;
-  gap: 4px;
+  gap: 10px;
 }
 
 .scratch-tools .btn {
-  min-height: 36px;
-  padding: 6px 12px;
+  flex: 1;
+  min-height: 52px;
+  font-size: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
 }
 
 .mode-toggle {

@@ -42,6 +42,7 @@ export function SessionRunner({
   const [mode, setMode] = useState<'answer' | 'scratch'>('answer')
   const savedRef = useRef(false)
   const swipeStart = useRef<{ x: number; y: number } | null>(null)
+  const swipeLast = useRef<{ x: number; y: number } | null>(null)
   const flushedRef = useRef(0)
 
   const skillsById = useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills])
@@ -135,16 +136,31 @@ export function SessionRunner({
    */
   const onSwipeStart = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
     if ((event.target as HTMLElement).closest('.scratch-canvas')) return
+    // Gestures beginning at a screen edge belong to the browser (back/forward).
+    if (event.clientX < 24 || event.clientX > window.innerWidth - 24) {
+      swipeStart.current = null
+      return
+    }
     swipeStart.current = { x: event.clientX, y: event.clientY }
+    swipeLast.current = { x: event.clientX, y: event.clientY }
   }, [])
 
-  const onSwipeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
+  const onSwipeMove = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
+    if (swipeStart.current) swipeLast.current = { x: event.clientX, y: event.clientY }
+  }, [])
+
+  // Resolved from the last observed position rather than the end event, because
+  // a cancelled pointer carries the coordinates of the cancellation, not the
+  // gesture.
+  const resolveSwipe = useCallback((): void => {
     const start = swipeStart.current
+    const last = swipeLast.current
     swipeStart.current = null
-    if (!start) return
-    const dx = event.clientX - start.x
-    const dy = event.clientY - start.y
-    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+    swipeLast.current = null
+    if (!start || !last) return
+    const dx = last.x - start.x
+    const dy = last.y - start.y
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return
     setMode(dx < 0 ? 'scratch' : 'answer')
   }, [])
 
@@ -218,7 +234,9 @@ export function SessionRunner({
           mode === 'scratch' ? ' scratch-mode' : ''
         }`}
         onPointerDown={onSwipeStart}
-        onPointerUp={onSwipeEnd}
+        onPointerMove={onSwipeMove}
+        onPointerUp={resolveSwipe}
+        onPointerCancel={resolveSwipe}
       >
         <div className="problem-prompt">{current ? `${current.prompt} =` : ''}</div>
         {current && (
@@ -227,6 +245,7 @@ export function SessionRunner({
             onSubmit={handleSubmit}
             onSkip={spec.allowSkip ? session.skip : undefined}
             compact={mode === 'scratch'}
+            onRequestKeypad={() => setMode('answer')}
           />
         )}
         {current && mode === 'scratch' && <ScratchPad resetKey={current.id} />}
