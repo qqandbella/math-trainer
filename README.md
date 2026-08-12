@@ -110,6 +110,19 @@ pen-on-paper, size-normalised and centred, and a finger on glass is a different
 distribution entirely. The lesson is recorded here rather than repeated — see
 `docs/design/` if it is ever revisited.
 
+### Session history
+
+Progress lists every session on its own — Daily Practice and a Mental Challenge
+on the same day are different things and a daily total hides that. Tap one to
+see each problem in it: what was answered, the correct value, how long it took,
+which skill it exercised, and the working out for anything wrong.
+
+Parent mode shows the same list with selection, so a session that should never
+have counted — a parent trying the app — can be deleted rather than averaged
+into the learner's record. Deletion goes through the same tombstone mechanism as
+a full erase, so it propagates to other devices and cannot come back from an
+older backup, and it takes the working-out pictures with it.
+
 ### Reviewing the working out
 
 For a wrong answer, the scratch pad is saved as a picture and offered in the

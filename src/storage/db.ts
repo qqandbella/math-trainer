@@ -492,6 +492,37 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
 }
 
 /**
+ * Removes specific sessions and everything recorded in them.
+ *
+ * Uses the same tombstone mechanism as a full erase, so a deleted session stays
+ * deleted: it will not come back from an older export, and it propagates to
+ * other devices rather than being quietly re-added by the next merge.
+ */
+export async function deleteSessions(
+  sessionIds: readonly string[],
+  learnerId: string,
+  deviceId: string,
+): Promise<{ attemptsRemoved: number; sessionsRemoved: number }> {
+  if (sessionIds.length === 0) return { attemptsRemoved: 0, sessionsRemoved: 0 }
+  const { makeRecordTombstone } = await import('../core/tombstones')
+
+  const attempts = await loadAttempts()
+  const doomed = new Set(sessionIds)
+  const attemptIds = attempts.filter((a) => doomed.has(a.sessionId)).map((a) => a.id)
+
+  const tombstone = makeRecordTombstone(
+    learnerId,
+    deviceId,
+    [...sessionIds, ...attemptIds],
+    Date.now(),
+  )
+  await saveTombstones([tombstone], { enqueue: true })
+  const removed = await applyTombstonesLocally([tombstone])
+  await deleteWorkings(attemptIds)
+  return removed
+}
+
+/**
  * Erases practice history for a learner, durably.
  *
  * Writes a purge tombstone first, then drops the rows. The tombstone is the

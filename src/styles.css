@@ -880,3 +880,88 @@ details summary::-webkit-details-marker {
   border-radius: 10px;
   background: #fff;
 }
+
+/* ---------- session history ---------- */
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.session-row {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.session-row.ticked {
+  border-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.session-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.session-row-head input[type='checkbox'] {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+
+.session-row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  min-height: 40px;
+}
+
+.session-row-title {
+  font-weight: 650;
+}
+
+.session-row-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-detail {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.attempt-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.attempt-row.wrong {
+  background: var(--bad-soft);
+}
+
+@media (max-width: 620px) {
+  .attempt-row {
+    grid-template-columns: 1fr auto auto;
+  }
+  .attempt-row > :nth-child(4) {
+    display: none;
+  }
+}

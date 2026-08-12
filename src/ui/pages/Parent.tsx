@@ -10,7 +10,8 @@ import { SessionRunner } from '../components/SessionRunner'
 import { generateSecret, otpauthUrl, secondsRemaining, verifyTotp } from '../../parent/totp'
 import { QrCode } from '../../parent/QrCode'
 import { buildExport, mergeBundle, parseBundle, shareBundle } from '../../storage/transfer'
-import { erasePracticeData, workingsSize } from '../../storage/db'
+import { deleteSessions, erasePracticeData, workingsSize } from '../../storage/db'
+import { SessionHistory } from '../components/SessionHistory'
 import type { Attempt } from '../../core/types'
 
 interface Props {
@@ -281,7 +282,7 @@ function Enrollment({
 
 /* ----------------------------------------------------------- parent home */
 
-type Panel = 'menu' | 'calibrate' | 'data' | 'settings'
+type Panel = 'menu' | 'calibrate' | 'data' | 'settings' | 'sessions'
 
 function ParentHome({ navigate }: Props): ReactNode {
   const [panel, setPanel] = useState<Panel>('menu')
@@ -289,6 +290,7 @@ function ParentHome({ navigate }: Props): ReactNode {
   if (panel === 'calibrate') return <Calibration onDone={() => setPanel('menu')} />
   if (panel === 'data') return <DataPanel onBack={() => setPanel('menu')} />
   if (panel === 'settings') return <SettingsPanel onBack={() => setPanel('menu')} />
+  if (panel === 'sessions') return <SessionsPanel onBack={() => setPanel('menu')} />
 
   return (
     <div className="stack">
@@ -311,6 +313,10 @@ function ParentHome({ navigate }: Props): ReactNode {
           <span className="muted">
             Run {CALIBRATION_COUNT} problems yourself; your speed becomes the 100 mark
           </span>
+        </button>
+        <button type="button" className="mode-card" onClick={() => setPanel('sessions')}>
+          <span className="title">Sessions</span>
+          <span className="muted">Review each session, and delete ones that should not count</span>
         </button>
         <button type="button" className="mode-card" onClick={() => setPanel('data')}>
           <span className="title">Export / import</span>
@@ -512,6 +518,91 @@ function Calibration({ onDone }: { onDone(): void }): ReactNode {
           Back
         </button>
       </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------- sessions */
+
+function SessionsPanel({ onBack }: { onBack(): void }): ReactNode {
+  const { sessions, attempts, skills, settings, reload } = useAppState()
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [confirming, setConfirming] = useState(false)
+  const [status, setStatus] = useState('')
+
+  const toggle = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const remove = useCallback(async () => {
+    const removed = await deleteSessions(
+      [...selected],
+      settings.activeLearnerId,
+      settings.deviceId,
+    )
+    await reload()
+    setSelected(new Set())
+    setConfirming(false)
+    setStatus(
+      `Deleted ${removed.sessionsRemoved} session${removed.sessionsRemoved === 1 ? '' : 's'} ` +
+        `and ${removed.attemptsRemoved} problems.`,
+    )
+  }, [selected, settings.activeLearnerId, settings.deviceId, reload])
+
+  return (
+    <div className="stack">
+      <h1>Sessions</h1>
+      <div className="card stack">
+        <p className="muted" style={{ margin: 0 }}>
+          Tick any session that should not count — your own trial runs, for instance — and
+          delete it. Deleting is permanent and propagates to your other devices; it will not
+          come back from an older backup.
+        </p>
+        {selected.size > 0 &&
+          (confirming ? (
+            <>
+              <button type="button" className="btn btn-danger btn-block" onClick={() => void remove()}>
+                Yes, delete {selected.size} session{selected.size === 1 ? '' : 's'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-block"
+                onClick={() => setConfirming(false)}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-danger btn-block"
+              onClick={() => setConfirming(true)}
+            >
+              Delete {selected.size} selected
+            </button>
+          ))}
+        {status && (
+          <p className="faint" style={{ margin: 0 }}>
+            {status}
+          </p>
+        )}
+        <SessionHistory
+          sessions={sessions}
+          attempts={attempts}
+          skills={skills}
+          selectable
+          selected={selected}
+          onToggleSelected={toggle}
+        />
+      </div>
+      <button type="button" className="btn btn-ghost btn-block" onClick={onBack}>
+        Back
+      </button>
     </div>
   )
 }

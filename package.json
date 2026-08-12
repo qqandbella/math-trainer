@@ -18,7 +18,8 @@
     "migration": "node scripts/migration.mjs",
     "scratch": "node scripts/scratch.mjs",
     "correct": "node scripts/correct.mjs",
-    "privilege": "node scripts/privilege.mjs"
+    "privilege": "node scripts/privilege.mjs",
+    "sessions": "node scripts/sessions.mjs"
   },
   "dependencies": {
     "firebase": "^12.17.1",

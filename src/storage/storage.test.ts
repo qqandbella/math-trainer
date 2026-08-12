@@ -355,3 +355,64 @@ describe('working-out images', () => {
     expect(bundle).not.toContain('data:image/png')
   })
 })
+
+describe('deleting individual sessions', () => {
+  it('removes only the chosen session and its attempts', async () => {
+    const { deleteSessions } = await import('./db')
+    const { activeLearnerId, deviceId } = await loadSettings()
+
+    const mine = { ...session('parent-run', activeLearnerId), id: 'parent-run' }
+    const hers = { ...session('her-run', activeLearnerId), id: 'her-run' }
+    await saveSession(mine)
+    await saveSession(hers)
+    await saveAttempts([
+      { ...attempt('m1', activeLearnerId), sessionId: 'parent-run' },
+      { ...attempt('m2', activeLearnerId), sessionId: 'parent-run' },
+      { ...attempt('h1', activeLearnerId), sessionId: 'her-run' },
+    ])
+
+    const removed = await deleteSessions(['parent-run'], activeLearnerId, deviceId)
+    expect(removed.sessionsRemoved).toBe(1)
+    expect(removed.attemptsRemoved).toBe(2)
+    expect((await loadSessions()).map((s) => s.id)).toEqual(['her-run'])
+    expect((await loadAttempts()).map((a) => a.id)).toEqual(['h1'])
+  })
+
+  it('a deleted session does not return from an older export', async () => {
+    const { deleteSessions } = await import('./db')
+    const { activeLearnerId, deviceId } = await loadSettings()
+    await saveSession({ ...session('s1', activeLearnerId), id: 's1' })
+    await saveAttempts([{ ...attempt('a1', activeLearnerId), sessionId: 's1' }])
+
+    const backup = JSON.stringify(await buildExport('laptop'))
+    await deleteSessions(['s1'], activeLearnerId, deviceId)
+
+    const report = await mergeBundle(parseBundle(backup, activeLearnerId))
+    expect(await loadSessions()).toHaveLength(0)
+    expect(await loadAttempts()).toHaveLength(0)
+    expect(report.attemptsBlockedByErase).toBe(1)
+  })
+
+  it('takes the working-out pictures with it', async () => {
+    const { deleteSessions, saveWorking, loadWorkings } = await import('./db')
+    const { activeLearnerId, deviceId } = await loadSettings()
+    await saveSession({ ...session('s1', activeLearnerId), id: 's1' })
+    await saveAttempts([{ ...attempt('a1', activeLearnerId), sessionId: 's1' }])
+    await saveWorking('a1', activeLearnerId, 'data:image/png;base64,AAA')
+
+    await deleteSessions(['s1'], activeLearnerId, deviceId)
+    expect((await loadWorkings(['a1'])).size).toBe(0)
+  })
+
+  it('leaves other sessions untouched when several are deleted', async () => {
+    const { deleteSessions } = await import('./db')
+    const { activeLearnerId, deviceId } = await loadSettings()
+    for (const id of ['a', 'b', 'c']) {
+      await saveSession({ ...session(id, activeLearnerId), id })
+      await saveAttempts([{ ...attempt(`${id}-1`, activeLearnerId), sessionId: id }])
+    }
+    await deleteSessions(['a', 'c'], activeLearnerId, deviceId)
+    expect((await loadSessions()).map((s) => s.id)).toEqual(['b'])
+    expect((await loadAttempts()).map((a) => a.id)).toEqual(['b-1'])
+  })
+})

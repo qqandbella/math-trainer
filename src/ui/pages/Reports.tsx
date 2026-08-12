@@ -4,6 +4,7 @@ import type { RouteName } from '../../app/router'
 import { curriculum } from '../../curriculum'
 import { computeMastery } from '../../core/mastery'
 import { MasteryBar, TrendChart, type Point } from '../components/Charts'
+import { SessionHistory } from '../components/SessionHistory'
 import type { Attempt, MasteryResult, Skill, SkillGroup } from '../../core/types'
 
 interface Props {
@@ -183,6 +184,14 @@ export function Reports({ navigate }: Props): ReactNode {
           ))}
         </div>
       )}
+
+      <div className="card">
+        <h3>Sessions</h3>
+        <p className="faint" style={{ marginTop: 2 }}>
+          Each session on its own. Tap one to see every problem in it.
+        </p>
+        <SessionHistory sessions={sessions} attempts={attempts} skills={skills} />
+      </div>
 
       <div className="card">
         <h3>Accuracy by day</h3>
