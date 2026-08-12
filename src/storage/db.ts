@@ -17,6 +17,8 @@ export interface Settings {
   parentTotpSecret: string | null
   /** Stable per-install id. Records which device wrote a tombstone. */
   deviceId: string
+  /** How many problems a daily session asks for. 0 follows the curriculum. */
+  dailyProblemCount: number
   /** Which learner new practice is recorded against. */
   activeLearnerId: string
   /** The account this device last synced with, to detect a switch. */
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pauseBudget: 3,
   revealAnswersDuringSession: false,
   minTier: 2,
+  dailyProblemCount: 0,
   targetOverrides: {},
   parentTotpSecret: null,
   deviceId: '',

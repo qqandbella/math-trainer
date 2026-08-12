@@ -97,15 +97,28 @@ describe('selection', () => {
     }
   })
 
-  it('honours the daily operation mix', () => {
-    const { problemCount, mix } = curriculum.presets.daily
-    const picked = selectByMix(practiceSkills, mix, problemCount, ctx(new Map()))
-    expect(picked).toHaveLength(problemCount)
+  it('keeps the daily mix in proportion at any session length', () => {
+    const { mix, countChoices } = curriculum.presets.daily
+    const weightTotal = Object.values(mix).reduce((a, b) => a + (b ?? 0), 0)
 
-    const byOp = new Map<string, number>()
-    for (const s of picked) byOp.set(s.op, (byOp.get(s.op) ?? 0) + 1)
-    for (const [op, want] of Object.entries(mix)) {
-      expect(byOp.get(op) ?? 0).toBe(want)
+    // The mix is a ratio, not a count: a 30-problem session must have the same
+    // shape as a 60-problem one.
+    for (const total of [...countChoices, curriculum.presets.daily.problemCount]) {
+      const picked = selectByMix(practiceSkills, mix, total, ctx(new Map()))
+      expect(picked, `length ${total}`).toHaveLength(total)
+
+      const byOp = new Map<string, number>()
+      for (const s of picked) byOp.set(s.op, (byOp.get(s.op) ?? 0) + 1)
+      for (const [op, weight] of Object.entries(mix)) {
+        const want = ((weight ?? 0) / weightTotal) * total
+        // Apportionment rounds, so allow one problem either way.
+        expect(byOp.get(op) ?? 0, `${op} at length ${total}`).toBeGreaterThanOrEqual(
+          Math.floor(want),
+        )
+        expect(byOp.get(op) ?? 0, `${op} at length ${total}`).toBeLessThanOrEqual(
+          Math.ceil(want),
+        )
+      }
     }
   })
 

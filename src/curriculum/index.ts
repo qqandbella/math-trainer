@@ -29,6 +29,8 @@ export type OpMix = Partial<Record<Op, number>>
 export interface DailyPreset {
   label: string
   problemCount: number
+  /** Offered in parent settings; the session uses whichever is chosen. */
+  countChoices: number[]
   mix: OpMix
 }
 

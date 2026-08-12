@@ -623,6 +623,30 @@ function SettingsPanel({ onBack }: { onBack(): void }): ReactNode {
         </div>
 
         <div className="field">
+          <label>Problems in a daily session</label>
+          <div className="chip-row">
+            {curriculum.presets.daily.countChoices.map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`chip${
+                  (settings.dailyProblemCount || curriculum.presets.daily.problemCount) === n
+                    ? ' selected'
+                    : ''
+                }`}
+                onClick={() => void updateSettings({ dailyProblemCount: n })}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <span className="faint">
+            Shorter sessions done every day beat long ones done occasionally. The mix of
+            operations stays in proportion whichever length you pick.
+          </span>
+        </div>
+
+        <div className="field">
           <label>Pauses allowed per session</label>
           <div className="chip-row">
             {[0, 1, 2, 3, 5].map((n) => (

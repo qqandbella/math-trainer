@@ -140,7 +140,8 @@ export function Dashboard({ navigate }: Props): ReactNode {
         <button type="button" className="mode-card primary" onClick={() => navigate('daily')}>
           <span className="title">Daily Practice</span>
           <span className="muted">
-            {curriculum.presets.daily.problemCount} problems, picked for what needs work
+            {settings.dailyProblemCount || curriculum.presets.daily.problemCount} problems,
+            picked for what needs work
           </span>
         </button>
 

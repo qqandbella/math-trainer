@@ -51,7 +51,8 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
 
     if (mode === 'daily') {
       const preset = curriculum.presets.daily
-      const chosen = selectByMix(practicePool, preset.mix, preset.problemCount, ctx)
+      const count = settings.dailyProblemCount || preset.problemCount
+      const chosen = selectByMix(practicePool, preset.mix, count, ctx)
       return {
         mode: 'daily' as SessionMode,
         learnerId,
@@ -111,6 +112,7 @@ export function PracticePage({ mode, navigate }: Props): ReactNode {
     mentalSkills,
     settings.pauseBudget,
     settings.activeLearnerId,
+    settings.dailyProblemCount,
     customOps,
     customCount,
     mentalDuration,

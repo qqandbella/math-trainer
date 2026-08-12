@@ -68,11 +68,16 @@ own medians. Calibration attempts are never written to the learner's history.
 
 ### Adaptive selection
 
-Daily Practice fills its 60 problems as ~55% weakest skills (weighted by
+Daily Practice fills its problems as ~55% weakest skills (weighted by
 `100 − mastery`), ~25% spaced review of skills untouched for 3+ days, and ~20%
 next-rung skills not yet seen — with a per-skill cap so no session degenerates
 into one drill, and a pass that stops the same skill appearing three times in a
 row.
+
+Session length is 30 by default and configurable in parent settings
+(20/30/40/50/60). The operation mix is a ratio rather than a set of counts, so
+the shape of a session is the same whichever length is chosen — a shorter
+session done daily beats a longer one done occasionally.
 
 ### Sessions
 
