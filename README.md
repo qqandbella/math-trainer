@@ -22,9 +22,7 @@ npm run typecheck
 npm run build        # typecheck + production build into dist/
 npm run smoke        # end-to-end browser test against a preview server
 npm run offline      # cold-start-with-no-network test (install, quit, relaunch offline)
-npm run parent       # parent gesture, TOTP enrollment, and the erase path
-npm run transfer     # export from one profile, import into another, twice
-npm run qr           # decode the enrollment QR and check it carries the right URL
+npm run privilege    # what works signed out, and that parent tools need an account
 npm run migration    # seed a real v1 database and check the upgrade preserves it
 npm run scratch      # scratch pad: drawing, erasing, folding, reset per problem
 npm run correct      # going back to fix a mistyped answer
@@ -127,12 +125,25 @@ thoughts are the thing being measured.
 zero, and **skipping costs points — more for easier problems**, so the incentive
 is to attempt everything rather than cherry-pick.
 
-### Parent mode
+### Accounts and parent mode
 
-Reached by pressing and holding the dashboard title for 3 seconds. There is no
-visible entry point, and the gate is a **TOTP code** from your authenticator app
-rather than a password — a password is memorised the first time a child watches
-you type it; a 30-second code is worthless once seen.
+Practice needs no account. Signing in with Google is what unlocks the advanced
+features: cross-device sync, parent settings, calibration, export/import, and
+reviewing scratch work.
+
+Parent mode is reached by pressing and holding the dashboard title for 3
+seconds, and is gated by a **TOTP code** from your authenticator app rather than
+a password — a password is memorised the first time a child watches you type it;
+a 30-second code is worthless once seen.
+
+**The secret belongs to the account, not the device.** Held per device it had to
+be enrolled once per device *and* per browser profile, which across a few
+laptops and tablets is unworkable. It now lives in the household document and is
+cached on each device, so it is enrolled once, accepted everywhere, and still
+works offline.
+
+Signing in is deliberately not sufficient on its own: the learner's own tablet
+must be signed in for sync, so a code is still required to get past the gate.
 
 Enrollment shows a **QR code** to scan with a phone authenticator, with a
 tap-through `otpauth://` link for setting up on the same device and the raw

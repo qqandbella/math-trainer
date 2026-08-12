@@ -164,7 +164,18 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       const { observeAccount } = await import('../sync/auth')
       dispose = await observeAccount((account) => {
         setSync((s) => ({ ...s, account }))
-        if (account) void runSync()
+        if (!account) return
+        void runSync()
+        // Pull the account's parent secret so this device can open parent mode
+        // without its own enrolment, and keep working offline afterwards.
+        void (async () => {
+          const { fetchAccountSecret } = await import('../sync/account')
+          const secret = await fetchAccountSecret().catch(() => null)
+          if (secret) {
+            await saveSettings({ accountTotpSecret: secret })
+            setSettings((prev) => ({ ...prev, accountTotpSecret: secret }))
+          }
+        })()
       })
     })()
     return () => dispose?.()

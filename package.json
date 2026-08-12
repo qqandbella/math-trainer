@@ -15,12 +15,10 @@
     "smoke": "vite build && (vite preview --port 4173 & sleep 3) && node scripts/smoke.mjs",
     "icons": "node scripts/make-icons.mjs",
     "offline": "vite build && (vite preview --port 4173 & sleep 3) && node scripts/offline.mjs http://localhost:4173/math-trainer/",
-    "parent": "node scripts/parent.mjs",
-    "transfer": "node scripts/transfer.mjs",
-    "qr": "node scripts/qr.mjs",
     "migration": "node scripts/migration.mjs",
     "scratch": "node scripts/scratch.mjs",
-    "correct": "node scripts/correct.mjs"
+    "correct": "node scripts/correct.mjs",
+    "privilege": "node scripts/privilege.mjs"
   },
   "dependencies": {
     "firebase": "^12.17.1",

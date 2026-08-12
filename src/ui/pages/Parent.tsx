@@ -19,21 +19,39 @@ interface Props {
 
 const CALIBRATION_COUNT = 40
 
+/**
+ * Parent tools require an account.
+ *
+ * Signing in is what separates basic use from the advanced features, and the
+ * parent secret lives with the account rather than the device - so it is
+ * enrolled once and works on every device, instead of once per device and
+ * browser profile.
+ *
+ * Being signed in is not by itself enough: the learner's own tablet has to be
+ * signed in for sync to work, so a code is still required to get past this.
+ */
 export function Parent({ navigate }: Props): ReactNode {
-  const { settings, updateSettings } = useAppState()
+  const { settings, updateSettings, sync, signInToSync } = useAppState()
   const [unlocked, setUnlocked] = useState(false)
 
+  if (!sync.account) {
+    return <SignInRequired onSignIn={signInToSync} busy={sync.busy} onCancel={() => navigate('home')} />
+  }
+
+  const secret = settings.accountTotpSecret
+
   if (!unlocked) {
-    return settings.parentTotpSecret ? (
-      <Gate
-        secret={settings.parentTotpSecret}
-        onUnlock={() => setUnlocked(true)}
-        onCancel={() => navigate('home')}
-      />
+    return secret ? (
+      <Gate secret={secret} onUnlock={() => setUnlocked(true)} onCancel={() => navigate('home')} />
     ) : (
       <Enrollment
-        onEnrolled={async (secret) => {
-          await updateSettings({ parentTotpSecret: secret })
+        // An existing device-local secret is adopted as the account's, so a
+        // household that already enrolled does not have to start again.
+        suggested={settings.parentTotpSecret}
+        onEnrolled={async (chosen) => {
+          const { setAccountSecret } = await import('../../sync/account')
+          await setAccountSecret(chosen)
+          await updateSettings({ accountTotpSecret: chosen })
           setUnlocked(true)
         }}
         onCancel={() => navigate('home')}
@@ -42,6 +60,43 @@ export function Parent({ navigate }: Props): ReactNode {
   }
 
   return <ParentHome navigate={navigate} />
+}
+
+function SignInRequired({
+  onSignIn,
+  busy,
+  onCancel,
+}: {
+  onSignIn(): Promise<void>
+  busy: boolean
+  onCancel(): void
+}): ReactNode {
+  return (
+    <div className="stack">
+      <h1>Parent tools</h1>
+      <div className="card stack">
+        <p className="muted" style={{ margin: 0 }}>
+          Sign in with Google to reach reports, calibration, settings and sync. Practice
+          itself never needs an account.
+        </p>
+        <p className="faint" style={{ margin: 0 }}>
+          Parent access is set up once for the account and then works on every device, rather
+          than being enrolled separately on each one.
+        </p>
+        <button
+          type="button"
+          className="btn btn-primary btn-block"
+          disabled={busy}
+          onClick={() => void onSignIn()}
+        >
+          {busy ? 'Opening…' : 'Sign in with Google'}
+        </button>
+        <button type="button" className="btn btn-ghost btn-block" onClick={onCancel}>
+          Back
+        </button>
+      </div>
+    </div>
+  )
 }
 
 /* ------------------------------------------------------------------ gate */
@@ -114,11 +169,13 @@ function Gate({
 function Enrollment({
   onEnrolled,
   onCancel,
+  suggested,
 }: {
   onEnrolled(secret: string): Promise<void>
   onCancel(): void
+  suggested?: string | null
 }): ReactNode {
-  const [secret] = useState(() => generateSecret())
+  const [secret] = useState(() => suggested ?? generateSecret())
   // Named at enrollment, because every device generates its own secret and
   // several identical "Math Trainer: parent" entries are impossible to tell
   // apart in an authenticator app.
@@ -147,6 +204,10 @@ function Enrollment({
         <p className="muted" style={{ margin: 0 }}>
           Parent mode is protected by a time-based code from your authenticator app rather
           than a password — a code seen over your shoulder is useless 30 seconds later.
+        </p>
+        <p className="faint" style={{ margin: 0 }}>
+          Set up once for the account. Every device you sign in to accepts the same codes,
+          including offline.
         </p>
         <div>
           <div className="field">
@@ -199,8 +260,8 @@ function Enrollment({
           {error && <span style={{ color: 'var(--bad)', fontSize: 13 }}>{error}</span>}
         </div>
         <p className="faint" style={{ margin: 0 }}>
-          Store the secret somewhere safe. It lives only on this device — clearing the
-          browser data means setting it up again.
+          Store the secret somewhere safe. It is kept with your account, so clearing this
+          device&apos;s data does not lose it.
         </p>
         <button
           type="button"

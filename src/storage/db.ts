@@ -13,7 +13,12 @@ export interface Settings {
   minTier: number
   /** Parent-calibrated reference times, skillId -> seconds. Overrides curriculum. */
   targetOverrides: Record<string, number>
-  /** Base32 TOTP secret for the parent gate. Generated on-device, never shipped. */
+  /**
+   * The account's parent secret, cached here so parent mode opens offline.
+   * The authority is the household document; this is only a copy.
+   */
+  accountTotpSecret: string | null
+  /** Legacy per-device secret, kept only so an existing device can adopt it. */
   parentTotpSecret: string | null
   /** Stable per-install id. Records which device wrote a tombstone. */
   deviceId: string
@@ -38,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   minTier: 2,
   dailyProblemCount: 0,
   targetOverrides: {},
+  accountTotpSecret: null,
   parentTotpSecret: null,
   deviceId: '',
   activeLearnerId: '',
