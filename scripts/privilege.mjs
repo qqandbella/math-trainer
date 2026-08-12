@@ -59,6 +59,50 @@ try {
   await page.getByRole('heading', { name: 'Sync' }).waitFor({ timeout: 5000 })
   console.log('ok  sync is offered from the dashboard while signed out')
 
+  // Reviewing working-out is an account feature: signed out, a wrong answer
+  // must not offer it (and nothing should be stored for it either).
+  await page.getByRole('button', { name: 'done' }).click()
+  await page.locator('.app-title').waitFor()
+  await page.getByText('Daily Practice').first().click()
+  await page.locator('.problem-prompt').waitFor({ timeout: 10000 })
+  if (!(await page.locator('.scratch-canvas').isVisible())) {
+    await page.getByRole('button', { name: /scratch pad/ }).click()
+  }
+  await page.locator('.scratch-canvas').waitFor()
+  const pad = await page.locator('.scratch-canvas').boundingBox()
+  await page.mouse.move(pad.x + 40, pad.y + 40)
+  await page.mouse.down()
+  for (let i = 1; i <= 12; i++) await page.mouse.move(pad.x + 40 + i * 8, pad.y + 40 + i * 4)
+  await page.mouse.up()
+
+  await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
+  await page.keyboard.type('999999')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(400)
+  await page.getByRole('button', { name: /pause/ }).click()
+  await page.getByRole('button', { name: 'End session now' }).click()
+  await page.getByText('Session complete').waitFor({ timeout: 5000 })
+
+  if (await page.getByRole('button', { name: 'see working' }).count()) {
+    fail('working-out review offered while signed out')
+  }
+  const stored = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const req = indexedDB.open('math-trainer')
+        req.onsuccess = () => {
+          const db = req.result
+          if (!db.objectStoreNames.contains('workings')) return resolve(-1)
+          const count = db.transaction('workings').objectStore('workings').count()
+          count.onsuccess = () => resolve(count.result)
+          count.onerror = () => resolve(-1)
+        }
+        req.onerror = () => resolve(-1)
+      }),
+  )
+  if (stored > 0) fail(`stored ${stored} working-out images while signed out`)
+  console.log('ok  signed out, working-out is neither shown nor stored')
+
   console.log('\nPRIVILEGE MODEL VERIFIED')
 } finally {
   await ctx.close()

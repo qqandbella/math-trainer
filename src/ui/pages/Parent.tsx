@@ -10,7 +10,7 @@ import { SessionRunner } from '../components/SessionRunner'
 import { generateSecret, otpauthUrl, secondsRemaining, verifyTotp } from '../../parent/totp'
 import { QrCode } from '../../parent/QrCode'
 import { buildExport, mergeBundle, parseBundle, shareBundle } from '../../storage/transfer'
-import { erasePracticeData } from '../../storage/db'
+import { erasePracticeData, workingsSize } from '../../storage/db'
 import type { Attempt } from '../../core/types'
 
 interface Props {
@@ -520,6 +520,11 @@ function Calibration({ onDone }: { onDone(): void }): ReactNode {
 
 function DataPanel({ onBack }: { onBack(): void }): ReactNode {
   const { reload, attempts, sessions, settings } = useAppState()
+  const [workings, setWorkings] = useState<{ count: number; bytes: number } | null>(null)
+
+  useEffect(() => {
+    void workingsSize().then(setWorkings)
+  }, [])
   const [status, setStatus] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const [confirmingReset, setConfirmingReset] = useState(false)
@@ -579,6 +584,12 @@ function DataPanel({ onBack }: { onBack(): void }): ReactNode {
           Merging is by record id, so importing the same file twice changes nothing and two
           devices can be merged in either order.
         </p>
+        {workings && workings.count > 0 && (
+          <p className="faint" style={{ margin: 0 }}>
+            {workings.count} pictures of working out, {Math.round(workings.bytes / 1024)} KB.
+            These stay on this device and are not exported or synced.
+          </p>
+        )}
         <button type="button" className="btn btn-primary btn-block" onClick={() => void doExport()}>
           Export data
         </button>

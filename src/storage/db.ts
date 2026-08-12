@@ -91,10 +91,22 @@ interface TrainerDB extends DBSchema {
     key: string
     value: { learnerId: string; cursor: number }
   }
+  /**
+   * A picture of the working out for an answer that came out wrong.
+   *
+   * Deliberately local: these are drawings by a child, they are only useful
+   * next to the session that produced them, and syncing them would mean image
+   * storage, upload cost and a new class of security rule for no real gain.
+   */
+  workings: {
+    key: string
+    value: { attemptId: string; learnerId: string; image: string; at: number }
+    indexes: { 'by-learner': string }
+  }
 }
 
 const DB_NAME = 'math-trainer'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 let dbPromise: Promise<IDBPDatabase<TrainerDB>> | null = null
 
@@ -171,6 +183,11 @@ function db(): Promise<IDBPDatabase<TrainerDB>> {
           for await (const cursor of tombstones.iterate()) {
             await outbox.put({ id: cursor.value.id, learnerId: cursor.value.learnerId, queuedAt })
           }
+        }
+
+        if (oldVersion < 4) {
+          const workings = database.createObjectStore('workings', { keyPath: 'attemptId' })
+          workings.createIndex('by-learner', 'learnerId')
         }
       },
     })
@@ -314,6 +331,46 @@ export async function loadSessions(): Promise<SessionRecord[]> {
   return (await db()).getAllFromIndex('sessions', 'by-startedAt')
 }
 
+export async function saveWorking(
+  attemptId: string,
+  learnerId: string,
+  image: string,
+): Promise<void> {
+  await (await db()).put('workings', { attemptId, learnerId, image, at: Date.now() })
+}
+
+export async function loadWorkings(attemptIds: readonly string[]): Promise<Map<string, string>> {
+  if (attemptIds.length === 0) return new Map()
+  const database = await db()
+  const tx = database.transaction('workings', 'readonly')
+  const found = new Map<string, string>()
+  await Promise.all(
+    attemptIds.map(async (id) => {
+      const row = await tx.store.get(id)
+      if (row) found.set(id, row.image)
+    }),
+  )
+  await tx.done
+  return found
+}
+
+export async function deleteWorkings(attemptIds: readonly string[]): Promise<void> {
+  if (attemptIds.length === 0) return
+  const database = await db()
+  const tx = database.transaction('workings', 'readwrite')
+  await Promise.all(attemptIds.map((id) => tx.store.delete(id)))
+  await tx.done
+}
+
+/** Bytes held by stored working-out, so the cost is visible rather than hidden. */
+export async function workingsSize(): Promise<{ count: number; bytes: number }> {
+  const rows = await (await db()).getAll('workings')
+  return {
+    count: rows.length,
+    bytes: rows.reduce((sum, r) => sum + r.image.length, 0),
+  }
+}
+
 export async function loadLearners(): Promise<Learner[]> {
   return (await db()).getAll('learners')
 }
@@ -451,5 +508,10 @@ export async function erasePracticeData(
   const tombstone = makePurge(learnerId, deviceId, Date.now(), latestKnownAt)
   await saveTombstones([tombstone], { enqueue: true })
   const removed = await applyTombstonesLocally([tombstone])
+  // Working-out belongs to the attempts being erased; leaving it would keep
+  // pictures of work whose record is gone.
+  const database = await db()
+  const stale = await database.getAllFromIndex('workings', 'by-learner', learnerId)
+  await deleteWorkings(stale.map((r) => r.attemptId))
   return { tombstone, ...removed }
 }

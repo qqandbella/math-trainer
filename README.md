@@ -110,6 +110,21 @@ pen-on-paper, size-normalised and centred, and a finger on glass is a different
 distribution entirely. The lesson is recorded here rather than repeated — see
 `docs/design/` if it is ever revisited.
 
+### Reviewing the working out
+
+For a wrong answer, the scratch pad is saved as a picture and offered in the
+session review — so a mistake can be diagnosed from *how* it was worked out,
+not just that the answer was wrong. Right answers are not kept: there is nothing
+to diagnose.
+
+The image is cropped to what was actually written and scaled down, which is a
+fraction of the size of a full-canvas screenshot, and it never leaves the
+device: not exported, not synced. Erasing practice data removes the pictures
+too, and parent mode reports how much space they occupy so the cost is visible
+rather than accumulating silently.
+
+An account feature, like sync.
+
 ### Correcting an answer
 
 **↩ back** returns to the previous problem with the answer pre-filled to edit. A

@@ -33,7 +33,8 @@ export interface SessionApi {
   pauseBudget: number
   /** Seconds left in timed modes, undefined for fixed-length sessions. */
   secondsLeft: number | undefined
-  submit(given: number, givenRemainder?: number | null): boolean
+  /** Returns the recorded attempt, so callers can attach anything to it. */
+  submit(given: number, givenRemainder?: number | null): Attempt | null
   skip(): void
   pause(): void
   resume(): void
@@ -141,7 +142,7 @@ export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi
         next[index] = attempt
         return next
       })
-      return correct
+      return attempt
     },
     [sessionId, spec.learnerId, attemptsByIndex, index],
   )
@@ -160,11 +161,11 @@ export function useSession(spec: SessionSpec, onFinish?: () => void): SessionApi
   }, [spec.problems.length, finish])
 
   const submit = useCallback(
-    (given: number, givenRemainder?: number | null): boolean => {
-      if (!current || phase !== 'running') return false
-      const correct = record(current, given, givenRemainder)
+    (given: number, givenRemainder?: number | null): Attempt | null => {
+      if (!current || phase !== 'running') return null
+      const attempt = record(current, given, givenRemainder)
       advance()
-      return correct
+      return attempt
     },
     [current, phase, record, advance],
   )

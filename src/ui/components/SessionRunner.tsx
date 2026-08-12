@@ -6,7 +6,7 @@ import { AnswerPad } from './AnswerPad'
 import { ScratchPad } from './ScratchPad'
 import { scoreMentalSession, type MentalScore } from '../../core/mental'
 import { curriculum } from '../../curriculum'
-import { saveAttempts } from '../../storage/db'
+import { loadWorkings, saveAttempts, saveWorking } from '../../storage/db'
 
 interface Props {
   spec: SessionSpec
@@ -36,7 +36,7 @@ export function SessionRunner({
   persist = true,
   onComplete,
 }: Props): ReactNode {
-  const { recordSession, settings, skills } = useAppState()
+  const { recordSession, settings, skills, sync } = useAppState()
   const session = useSession(spec)
   const [flash, setFlash] = useState(false)
   const savedRef = useRef(false)
@@ -46,6 +46,7 @@ export function SessionRunner({
    * pad and the keypad at once; a phone does not, and starting folded keeps the
    * first thing she sees simple.
    */
+  const captureRef = useRef<(() => string | null) | null>(null)
   const [scratchOpen, setScratchOpen] = useState(
     () => Math.min(window.innerWidth, window.innerHeight) >= 600,
   )
@@ -142,13 +143,19 @@ export function SessionRunner({
 
   const handleSubmit = useCallback(
     (answer: number, remainder: number | null) => {
-      const correct = session.submit(answer, remainder)
-      if (correct) {
+      const attempt = session.submit(answer, remainder)
+      if (!attempt) return
+      if (attempt.correct) {
         setFlash(true)
         window.setTimeout(() => setFlash(false), 380)
+      } else if (persist && sync.account) {
+        // Keep the working out only when it is worth reviewing: a wrong answer,
+        // on an account that has the feature. Right answers need no diagnosis.
+        const image = captureRef.current?.()
+        if (image) void saveWorking(attempt.id, attempt.learnerId, image)
       }
     },
-    [session],
+    [session, persist, sync.account],
   )
 
   const handleRestart = useCallback(() => {
@@ -224,6 +231,7 @@ export function SessionRunner({
                 resetKey={current.id}
                 expanded={scratchOpen}
                 onToggle={() => setScratchOpen((open) => !open)}
+                captureRef={captureRef}
               />
             )}
           </AnswerPad>
@@ -275,6 +283,14 @@ function SessionSummary({
   onExit,
   onAgain,
 }: SummaryProps): ReactNode {
+  const [workings, setWorkings] = useState<Map<string, string>>(new Map())
+  const [showing, setShowing] = useState<string | null>(null)
+
+  useEffect(() => {
+    const wrongIds = attempts.filter((a) => a.given !== null && !a.correct).map((a) => a.id)
+    void loadWorkings(wrongIds).then(setWorkings)
+  }, [attempts])
+
   const answered = attempts.filter((a) => a.given !== null)
   const correct = attempts.filter((a) => a.correct)
   const wrong = attempts.filter((a) => a.given !== null && !a.correct)
@@ -331,20 +347,36 @@ function SessionSummary({
           </p>
           <div className="review-list">
             {wrong.map((a) => (
-              <div key={a.id} className="review-item">
-                <span className="expr">{a.prompt} =</span>
-                <span>
-                  <span className="given">
-                    {a.given}
-                    {a.remainder !== undefined && a.givenRemainder != null
-                      ? ` r${a.givenRemainder}`
-                      : ''}
-                  </span>{' '}
-                  <span className="right">
-                    {a.answer}
-                    {a.remainder !== undefined ? ` r${a.remainder}` : ''}
+              <div key={a.id}>
+                <div className="review-item">
+                  <span className="expr">{a.prompt} =</span>
+                  <span className="row" style={{ gap: 10 }}>
+                    <span>
+                      <span className="given">
+                        {a.given}
+                        {a.remainder !== undefined && a.givenRemainder != null
+                          ? ` r${a.givenRemainder}`
+                          : ''}
+                      </span>{' '}
+                      <span className="right">
+                        {a.answer}
+                        {a.remainder !== undefined ? ` r${a.remainder}` : ''}
+                      </span>
+                    </span>
+                    {workings.has(a.id) && (
+                      <button
+                        type="button"
+                        className="pill"
+                        onClick={() => setShowing(showing === a.id ? null : a.id)}
+                      >
+                        {showing === a.id ? 'hide working' : 'see working'}
+                      </button>
+                    )}
                   </span>
-                </span>
+                </div>
+                {showing === a.id && (
+                  <img className="working-image" src={workings.get(a.id)} alt="working out" />
+                )}
               </div>
             ))}
           </div>

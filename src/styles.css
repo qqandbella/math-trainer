@@ -871,3 +871,12 @@ details summary::-webkit-details-marker {
     min-height: 140px;
   }
 }
+
+.working-image {
+  display: block;
+  width: 100%;
+  margin: 6px 0 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}

@@ -18,6 +18,11 @@ interface Props {
   resetKey: string
   expanded: boolean
   onToggle(): void
+  /**
+   * Filled with a function that renders the current working out as a PNG, so a
+   * wrong answer can be reviewed alongside how it was worked out.
+   */
+  captureRef?: { current: (() => string | null) | null }
 }
 
 /**
@@ -30,7 +35,7 @@ interface Props {
  * so erasing is a real operation and a resize redraws at the new size instead
  * of stretching a bitmap. Nothing is persisted - this is paper.
  */
-export function ScratchPad({ resetKey, expanded, onToggle }: Props): ReactNode {
+export function ScratchPad({ resetKey, expanded, onToggle, captureRef }: Props): ReactNode {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const strokesRef = useRef<Stroke[]>([])
   const currentRef = useRef<Stroke | null>(null)
@@ -171,6 +176,71 @@ export function ScratchPad({ resetKey, expanded, onToggle }: Props): ReactNode {
     setIsEmpty(true)
     redraw()
   }
+
+  /**
+   * Renders the working out, cropped to what was actually written and scaled
+   * down. A full-canvas screenshot would be mostly blank and several times the
+   * size for no extra information.
+   */
+  const capture = useCallback((): string | null => {
+    const strokes = strokesRef.current.filter((s) => s.length > 0)
+    if (strokes.length === 0) return null
+
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const stroke of strokes) {
+      for (const pt of stroke) {
+        minX = Math.min(minX, pt.x)
+        minY = Math.min(minY, pt.y)
+        maxX = Math.max(maxX, pt.x)
+        maxY = Math.max(maxY, pt.y)
+      }
+    }
+    const pad = 12
+    const width = Math.max(1, maxX - minX + pad * 2)
+    const height = Math.max(1, maxY - minY + pad * 2)
+    const scale = Math.min(1, 640 / width)
+
+    const out = document.createElement('canvas')
+    out.width = Math.max(1, Math.round(width * scale))
+    out.height = Math.max(1, Math.round(height * scale))
+    const ctx = out.getContext('2d')
+    if (!ctx) return null
+
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, out.width, out.height)
+    ctx.scale(scale, scale)
+    ctx.translate(pad - minX, pad - minY)
+    ctx.strokeStyle = INK
+    ctx.fillStyle = INK
+    ctx.lineWidth = LINE_WIDTH
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    for (const stroke of strokes) {
+      const first = stroke[0] as Point
+      if (stroke.length === 1) {
+        ctx.beginPath()
+        ctx.arc(first.x, first.y, LINE_WIDTH / 2, 0, Math.PI * 2)
+        ctx.fill()
+        continue
+      }
+      ctx.beginPath()
+      ctx.moveTo(first.x, first.y)
+      for (let i = 1; i < stroke.length - 1; i++) {
+        const a = stroke[i] as Point
+        const b = stroke[i + 1] as Point
+        ctx.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2)
+      }
+      const last = stroke[stroke.length - 1] as Point
+      ctx.lineTo(last.x, last.y)
+      ctx.stroke()
+    }
+    return out.toDataURL('image/png')
+  }, [])
+
+  if (captureRef) captureRef.current = capture
 
   return (
     <div className={`scratch${expanded ? ' expanded' : ''}`}>

@@ -310,3 +310,48 @@ describe('switching sync account', () => {
     expect((await outboxIds(activeLearnerId)).sort()).toEqual(['a1', 'a2', 's1'])
   })
 })
+
+describe('working-out images', () => {
+  it('stores and reads back a picture for an attempt', async () => {
+    const { saveWorking, loadWorkings } = await import('./db')
+    const { activeLearnerId } = await loadSettings()
+    await saveWorking('a1', activeLearnerId, 'data:image/png;base64,AAA')
+    await saveWorking('a2', activeLearnerId, 'data:image/png;base64,BBB')
+
+    const found = await loadWorkings(['a1', 'a2', 'missing'])
+    expect(found.get('a1')).toBe('data:image/png;base64,AAA')
+    expect(found.get('a2')).toBe('data:image/png;base64,BBB')
+    expect(found.has('missing')).toBe(false)
+  })
+
+  it('reports how much space the pictures take', async () => {
+    const { saveWorking, workingsSize } = await import('./db')
+    const { activeLearnerId } = await loadSettings()
+    expect((await workingsSize()).count).toBe(0)
+    await saveWorking('a1', activeLearnerId, 'x'.repeat(5000))
+    const size = await workingsSize()
+    expect(size.count).toBe(1)
+    expect(size.bytes).toBeGreaterThanOrEqual(5000)
+  })
+
+  it('erasing practice data removes the pictures too', async () => {
+    const { saveWorking, loadWorkings } = await import('./db')
+    const { activeLearnerId, deviceId } = await loadSettings()
+    await saveAttempts([attempt('a1', activeLearnerId)])
+    await saveWorking('a1', activeLearnerId, 'data:image/png;base64,AAA')
+
+    await erasePracticeData(activeLearnerId, deviceId)
+    // Keeping a picture of working whose attempt no longer exists would be a
+    // quiet leak of erased data.
+    expect((await loadWorkings(['a1'])).size).toBe(0)
+  })
+
+  it('is not carried in an export, because it never leaves the device', async () => {
+    const { saveWorking } = await import('./db')
+    const { activeLearnerId } = await loadSettings()
+    await saveAttempts([attempt('a1', activeLearnerId)])
+    await saveWorking('a1', activeLearnerId, 'data:image/png;base64,AAA')
+    const bundle = JSON.stringify(await buildExport('laptop'))
+    expect(bundle).not.toContain('data:image/png')
+  })
+})
