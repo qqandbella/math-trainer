@@ -32,8 +32,12 @@ const CALIBRATION_COUNT = 40
  * signed in for sync to work, so a code is still required to get past this.
  */
 export function Parent({ navigate }: Props): ReactNode {
-  const { settings, updateSettings, sync, signInToSync } = useAppState()
+  const { settings, updateSettings, sync, signInToSync, preloadSignIn } = useAppState()
   const [unlocked, setUnlocked] = useState(false)
+
+  useEffect(() => {
+    if (!sync.account) void preloadSignIn()
+  }, [sync.account, preloadSignIn])
 
   if (!sync.account) {
     return <SignInRequired onSignIn={signInToSync} busy={sync.busy} onCancel={() => navigate('home')} />

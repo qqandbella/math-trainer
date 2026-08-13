@@ -48,6 +48,8 @@ interface AppState {
   updateSettings(patch: Partial<Settings>): Promise<void>
   reload(): Promise<void>
   sync: SyncStatus
+  /** Warms up Firebase so a later click can open a popup within its gesture. */
+  preloadSignIn(): Promise<void>
   signInToSync(): Promise<void>
   signOutOfSyncing(): Promise<void>
   runSync(): Promise<void>
@@ -95,6 +97,11 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       lastSyncedAt: result.status === 'ok' ? Date.now() : s.lastSyncedAt,
     }))
   }, [settings.activeLearnerId, reload])
+
+  const preloadSignIn = useCallback(async () => {
+    const { preloadAuth } = await import('../sync/auth')
+    await preloadAuth().catch(() => undefined)
+  }, [])
 
   const signInToSync = useCallback(async () => {
     setSync((s) => ({ ...s, busy: true, message: '' }))
@@ -155,10 +162,17 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
     return () => window.removeEventListener('online', onOnline)
   }, [settings.syncEnabled, runSync])
 
-  // Only devices that have opted into sync ever load the Firebase SDK.
+  // Only devices that have opted into sync ever load the Firebase SDK - plus
+  // any device in the middle of a redirect sign-in, which has to be able to
+  // collect the result even though sync is not enabled yet.
+  const [redirectPending, setRedirectPending] = useState(false)
+  useEffect(() => {
+    void import('../sync/auth').then(({ signInPending }) => setRedirectPending(signInPending()))
+  }, [])
+
   useEffect(() => {
     setSync((s) => ({ ...s, enabled: settings.syncEnabled }))
-    if (!ready || !settings.syncEnabled) return
+    if (!ready || (!settings.syncEnabled && !redirectPending)) return
     let dispose: (() => void) | undefined
     void (async () => {
       const { observeAccount } = await import('../sync/auth')
@@ -168,6 +182,12 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
         void runSync()
         // Pull the account's parent secret so this device can open parent mode
         // without its own enrolment, and keep working offline afterwards.
+        // A redirect sign-in lands here rather than in signInToSync, so this is
+        // where the device is marked as syncing.
+        if (!settings.syncEnabled) {
+          void saveSettings({ syncEnabled: true, syncAccountUid: account.uid })
+          setSettings((prev) => ({ ...prev, syncEnabled: true, syncAccountUid: account.uid }))
+        }
         void (async () => {
           const { fetchAccountSecret } = await import('../sync/account')
           const secret = await fetchAccountSecret().catch(() => null)
@@ -179,7 +199,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       })
     })()
     return () => dispose?.()
-  }, [ready, settings.syncEnabled, runSync])
+  }, [ready, settings.syncEnabled, redirectPending, runSync])
 
   const skills = useMemo(() => {
     const overrides = settings.targetOverrides
@@ -229,6 +249,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       updateSettings,
       reload,
       sync,
+      preloadSignIn,
       signInToSync,
       signOutOfSyncing,
       runSync,
@@ -244,6 +265,7 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       updateSettings,
       reload,
       sync,
+      preloadSignIn,
       signInToSync,
       signOutOfSyncing,
       runSync,

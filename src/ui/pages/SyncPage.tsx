@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { useAppState } from '../../app/state'
 import type { RouteName } from '../../app/router'
 
@@ -25,7 +25,14 @@ export function relativeTime(from: number | null, now = Date.now()): string {
  * protects nothing and makes setting up each device unnecessarily awkward.
  */
 export function SyncPage({ navigate }: Props): ReactNode {
-  const { sync, signInToSync, signOutOfSyncing, runSync, attempts } = useAppState()
+  const { sync, signInToSync, signOutOfSyncing, runSync, attempts, preloadSignIn } =
+    useAppState()
+
+  // Warmed up here so the sign-in click can open a popup inside its own gesture,
+  // which Safari requires.
+  useEffect(() => {
+    if (!sync.account) void preloadSignIn()
+  }, [sync.account, preloadSignIn])
 
   return (
     <div className="stack">
