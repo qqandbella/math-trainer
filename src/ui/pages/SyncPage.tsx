@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useAppState } from '../../app/state'
 import type { RouteName } from '../../app/router'
 
@@ -30,9 +30,28 @@ export function SyncPage({ navigate }: Props): ReactNode {
 
   // Warmed up here so the sign-in click can open a popup inside its own gesture,
   // which Safari requires.
+  const [diagnostic, setDiagnostic] = useState<string | null>(null)
+
   useEffect(() => {
     if (!sync.account) void preloadSignIn()
   }, [sync.account, preloadSignIn])
+
+  // Sign-in problems are invisible from the outside, and this is the one screen
+  // reachable when sign-in is what is broken.
+  useEffect(() => {
+    let cancelled = false
+    const tick = (): void => {
+      void import('../../sync/auth').then(({ readDiagnostic }) => {
+        if (!cancelled) setDiagnostic(readDiagnostic())
+      })
+    }
+    tick()
+    const timer = window.setInterval(tick, 1500)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   return (
     <div className="stack">
@@ -100,6 +119,17 @@ export function SyncPage({ navigate }: Props): ReactNode {
             {sync.message}
           </p>
         )}
+      </div>
+
+      <div className="card">
+        <h3>Diagnostics</h3>
+        <p className="faint" style={{ marginTop: 2 }}>
+          Build {__BUILD_ID__}
+        </p>
+        <div className="code-block">{diagnostic ?? 'no sign-in attempted yet'}</div>
+        <p className="faint" style={{ marginBottom: 0 }}>
+          If sign-in does not work, this line says what the browser reported.
+        </p>
       </div>
     </div>
   )

@@ -22,6 +22,25 @@ let handles: FirebaseHandles | null = null
 /** Set before a redirect so the result is collected when the app comes back. */
 const PENDING_KEY = 'math-trainer:sign-in-pending'
 
+/** Last auth failure, kept so the UI can show what actually went wrong. */
+const DIAG_KEY = 'math-trainer:auth-diagnostic'
+
+export function readDiagnostic(): string | null {
+  try {
+    return localStorage.getItem(DIAG_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function writeDiagnostic(note: string): void {
+  try {
+    localStorage.setItem(DIAG_KEY, `${new Date().toISOString().slice(11, 19)} ${note}`)
+  } catch {
+    // Nothing to do; diagnostics are best effort.
+  }
+}
+
 export function signInPending(): boolean {
   try {
     return localStorage.getItem(PENDING_KEY) === '1'
@@ -101,17 +120,23 @@ export async function signIn(): Promise<AccountInfo | null> {
   try {
     const credential = await mod.signInWithPopup(auth, provider)
     setPending(false)
+    writeDiagnostic('popup succeeded')
     return toAccount(credential.user)
   } catch (error) {
     const code = (error as { code?: string }).code ?? ''
+    const message = error instanceof Error ? error.message : String(error)
     if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      writeDiagnostic(`popup cancelled (${code})`)
       return null
     }
+    writeDiagnostic(`popup failed: ${code || message.slice(0, 90)} — trying redirect`)
     setPending(true)
     try {
       await mod.signInWithRedirect(auth, provider)
     } catch (redirectError) {
       setPending(false)
+      const rc = (redirectError as { code?: string }).code ?? String(redirectError)
+      writeDiagnostic(`redirect failed to start: ${rc}`)
       throw redirectError
     }
     return null // The page navigates away; observeAccount picks it up on return.
@@ -132,8 +157,21 @@ export async function observeAccount(
   const { onAuthStateChanged, getRedirectResult } = await import('firebase/auth')
   // Completes a redirect sign-in started before the page reloaded. Without this
   // running, a redirect sign-in never finishes and the device looks signed out.
+  const wasPending = signInPending()
   void getRedirectResult(auth)
-    .catch(() => undefined)
+    .then((result) => {
+      if (result?.user) writeDiagnostic('redirect returned an account')
+      else if (wasPending) {
+        writeDiagnostic(
+          'redirect came back with no account — the browser is most likely ' +
+            'blocking storage for the sign-in domain',
+        )
+      }
+    })
+    .catch((error: unknown) => {
+      const code = (error as { code?: string }).code ?? String(error)
+      writeDiagnostic(`redirect result error: ${code}`)
+    })
     .finally(() => setPending(false))
   return onAuthStateChanged(auth, (user) => onChange(user ? toAccount(user) : null))
 }
