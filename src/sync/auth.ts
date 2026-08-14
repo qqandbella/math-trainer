@@ -25,6 +25,8 @@ const PENDING_KEY = 'math-trainer:sign-in-pending'
 /** Last auth failure, kept so the UI can show what actually went wrong. */
 const DIAG_KEY = 'math-trainer:auth-diagnostic'
 
+/** Keeps a short history: a redirect outcome used to overwrite the popup error
+ *  that caused it, hiding the more useful of the two. */
 export function readDiagnostic(): string | null {
   try {
     return localStorage.getItem(DIAG_KEY)
@@ -35,9 +37,20 @@ export function readDiagnostic(): string | null {
 
 export function writeDiagnostic(note: string): void {
   try {
-    localStorage.setItem(DIAG_KEY, `${new Date().toISOString().slice(11, 19)} ${note}`)
+    const stamped = `${new Date().toISOString().slice(11, 19)} ${note}`
+    const previous = localStorage.getItem(DIAG_KEY) ?? ''
+    const lines = [...previous.split('\n').filter(Boolean), stamped].slice(-6)
+    localStorage.setItem(DIAG_KEY, lines.join('\n'))
   } catch {
     // Nothing to do; diagnostics are best effort.
+  }
+}
+
+export function clearDiagnostic(): void {
+  try {
+    localStorage.removeItem(DIAG_KEY)
+  } catch {
+    // Best effort.
   }
 }
 
@@ -96,6 +109,18 @@ let authModule: AuthModule | null = null
  * awaited in between - which is why sign-in worked on desktop Chrome, which is
  * lenient about this, and failed on iPad.
  */
+/** A home-screen web app cannot open a popup, which changes what will work. */
+export function isStandalone(): boolean {
+  try {
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true
+    )
+  } catch {
+    return false
+  }
+}
+
 export async function preloadAuth(): Promise<void> {
   const [, mod] = await Promise.all([getFirebase(), import('firebase/auth')])
   authModule = mod
@@ -116,6 +141,7 @@ export async function signIn(): Promise<AccountInfo | null> {
   // Ask for an account choice rather than silently reusing one, which matters
   // on a shared family device.
   provider.setCustomParameters({ prompt: 'select_account' })
+  writeDiagnostic(`trying popup (standalone=${isStandalone()})`)
 
   try {
     const credential = await mod.signInWithPopup(auth, provider)

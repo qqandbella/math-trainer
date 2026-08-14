@@ -10,6 +10,7 @@ import {
 import type { Attempt, SessionRecord, Skill, SkillStat } from '../core/types'
 import { curriculum, skills as baseSkills } from '../curriculum'
 import { rebuildStats } from '../core/mastery'
+import { signIn as startSignIn, preloadAuth } from '../sync/auth'
 import {
   DEFAULT_SETTINGS,
   loadAttempts,
@@ -99,15 +100,13 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
   }, [settings.activeLearnerId, reload])
 
   const preloadSignIn = useCallback(async () => {
-    const { preloadAuth } = await import('../sync/auth')
     await preloadAuth().catch(() => undefined)
   }, [])
 
   const signInToSync = useCallback(async () => {
     setSync((s) => ({ ...s, busy: true, message: '' }))
     try {
-      const { signIn } = await import('../sync/auth')
-      const account = await signIn()
+      const account = await startSignIn()
       if (account) {
         const previous = settings.syncAccountUid
         const switched = previous !== '' && previous !== account.uid

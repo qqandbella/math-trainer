@@ -126,10 +126,24 @@ export function SyncPage({ navigate }: Props): ReactNode {
         <p className="faint" style={{ marginTop: 2 }}>
           Build {__BUILD_ID__}
         </p>
-        <div className="code-block">{diagnostic ?? 'no sign-in attempted yet'}</div>
+        <div className="code-block" style={{ whiteSpace: 'pre-wrap' }}>
+          {diagnostic ?? 'no sign-in attempted yet'}
+        </div>
         <p className="faint" style={{ marginBottom: 0 }}>
-          If sign-in does not work, this line says what the browser reported.
+          If sign-in does not work, these lines say what the browser reported.
         </p>
+        <button
+          type="button"
+          className="btn btn-ghost btn-block"
+          onClick={() => {
+            void import('../../sync/auth').then(({ clearDiagnostic }) => {
+              clearDiagnostic()
+              setDiagnostic(null)
+            })
+          }}
+        >
+          clear log
+        </button>
       </div>
     </div>
   )
