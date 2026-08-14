@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore'
+import type { Learner } from '../core/types'
 import { getFirebase } from './auth'
 
 /**
@@ -30,6 +31,35 @@ export async function setAccountSecret(secret: string): Promise<void> {
       // once a second parent is added.
       members: { [user.uid]: 'owner' },
     },
+    { merge: true },
+  )
+}
+
+
+/** Every learner document the account holds. */
+export async function fetchAccountLearners(): Promise<Learner[]> {
+  const { auth, db } = await getFirebase()
+  const user = auth.currentUser
+  if (!user) return []
+  const snapshot = await getDocs(collection(db, 'households', user.uid, 'learners'))
+  return snapshot.docs.map((entry) => {
+    const data = entry.data()
+    return {
+      id: entry.id,
+      name: typeof data.name === 'string' ? data.name : '',
+      createdAt: typeof data.createdAt === 'number' ? data.createdAt : 0,
+    }
+  })
+}
+
+/** Announces this device's learner to the account. */
+export async function publishLearner(learner: Learner): Promise<void> {
+  const { auth, db } = await getFirebase()
+  const user = auth.currentUser
+  if (!user) throw new Error('Not signed in.')
+  await setDoc(
+    doc(db, 'households', user.uid, 'learners', learner.id),
+    { name: learner.name, createdAt: learner.createdAt },
     { merge: true },
   )
 }

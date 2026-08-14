@@ -14,6 +14,7 @@ import { signIn as startSignIn, preloadAuth } from '../sync/auth'
 import {
   DEFAULT_SETTINGS,
   loadAttempts,
+  loadLearners,
   loadSessions,
   loadSettings,
   saveAttempts,
@@ -84,20 +85,27 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
     void requestPersistentStorage()
   }, [reload])
 
-  const runSync = useCallback(async () => {
-    const learnerId = settings.activeLearnerId
-    if (!learnerId) return
-    setSync((s) => ({ ...s, busy: true }))
-    const { syncNow, describeSync } = await import('../sync/syncNow')
-    const result = await syncNow(learnerId)
-    await reload()
-    setSync((s) => ({
-      ...s,
-      busy: false,
-      message: describeSync(result),
-      lastSyncedAt: result.status === 'ok' ? Date.now() : s.lastSyncedAt,
-    }))
-  }, [settings.activeLearnerId, reload])
+  const syncLearner = useCallback(
+    async (learnerId: string) => {
+      if (!learnerId) return
+      setSync((s) => ({ ...s, busy: true }))
+      const { syncNow, describeSync } = await import('../sync/syncNow')
+      const result = await syncNow(learnerId)
+      await reload()
+      setSync((s) => ({
+        ...s,
+        busy: false,
+        message: describeSync(result),
+        lastSyncedAt: result.status === 'ok' ? Date.now() : s.lastSyncedAt,
+      }))
+    },
+    [reload],
+  )
+
+  const runSync = useCallback(
+    () => syncLearner(settings.activeLearnerId),
+    [settings.activeLearnerId, syncLearner],
+  )
 
   const preloadSignIn = useCallback(async () => {
     await preloadAuth().catch(() => undefined)
@@ -178,7 +186,6 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
       dispose = await observeAccount((account) => {
         setSync((s) => ({ ...s, account }))
         if (!account) return
-        void runSync()
         // Pull the account's parent secret so this device can open parent mode
         // without its own enrolment, and keep working offline afterwards.
         // A redirect sign-in lands here rather than in signInToSync, so this is
@@ -188,17 +195,45 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
           setSettings((prev) => ({ ...prev, syncEnabled: true, syncAccountUid: account.uid }))
         }
         void (async () => {
+          // Learner identity is settled before anything syncs. Sync is scoped
+          // per learner and each device mints its own id, so until the devices
+          // on an account agree on one, each reads an empty namespace.
+          let learnerId = settings.activeLearnerId
+          try {
+            const local = (await loadLearners()).find((l) => l.id === learnerId)
+            if (local) {
+              const { reconcileLearner } = await import('../sync/learner')
+              const agreed = await reconcileLearner(local)
+              if (agreed !== learnerId) {
+                const { relabelLearner, requeueEverything } = await import('../storage/db')
+                await relabelLearner(learnerId, agreed)
+                await saveSettings({ activeLearnerId: agreed })
+                setSettings((prev) => ({ ...prev, activeLearnerId: agreed }))
+                // This device's records were pushed under the old id, so the
+                // outbox is empty; without re-queueing they would never reach
+                // the shared namespace.
+                await requeueEverything(agreed)
+                learnerId = agreed
+              }
+            }
+          } catch {
+            // Offline or refused: reconciliation retries on the next sign-in.
+          }
+
           const { fetchAccountSecret } = await import('../sync/account')
           const secret = await fetchAccountSecret().catch(() => null)
           if (secret) {
             await saveSettings({ accountTotpSecret: secret })
             setSettings((prev) => ({ ...prev, accountTotpSecret: secret }))
           }
+          // Called with the reconciled id rather than through runSync, whose
+          // captured id is a render behind after a relabel.
+          await syncLearner(learnerId)
         })()
       })
     })()
     return () => dispose?.()
-  }, [ready, settings.syncEnabled, redirectPending, runSync])
+  }, [ready, settings.syncEnabled, redirectPending, runSync, syncLearner])
 
   const skills = useMemo(() => {
     const overrides = settings.targetOverrides

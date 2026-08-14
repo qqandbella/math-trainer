@@ -492,6 +492,58 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
 }
 
 /**
+ * Moves every local record onto a different learner id.
+ *
+ * Used when a device joins an account that already tracks a learner: its own
+ * generated id has to give way, or its practice would sit in a namespace no
+ * other device reads.
+ */
+export async function relabelLearner(fromId: string, toId: string): Promise<number> {
+  if (fromId === toId) return 0
+  const database = await db()
+  let moved = 0
+
+  const attemptTx = database.transaction('attempts', 'readwrite')
+  for await (const cursor of attemptTx.store.iterate()) {
+    if (cursor.value.learnerId !== fromId) continue
+    await cursor.update({ ...cursor.value, learnerId: toId })
+    moved++
+  }
+  await attemptTx.done
+
+  const sessionTx = database.transaction('sessions', 'readwrite')
+  for await (const cursor of sessionTx.store.iterate()) {
+    if (cursor.value.learnerId !== fromId) continue
+    await cursor.update({ ...cursor.value, learnerId: toId })
+    moved++
+  }
+  await sessionTx.done
+
+  const tombstoneTx = database.transaction('tombstones', 'readwrite')
+  for await (const cursor of tombstoneTx.store.iterate()) {
+    if (cursor.value.learnerId !== fromId) continue
+    await cursor.update({ ...cursor.value, learnerId: toId })
+    moved++
+  }
+  await tombstoneTx.done
+
+  const workingTx = database.transaction('workings', 'readwrite')
+  for await (const cursor of workingTx.store.iterate()) {
+    if (cursor.value.learnerId !== fromId) continue
+    await cursor.update({ ...cursor.value, learnerId: toId })
+  }
+  await workingTx.done
+
+  const learners = await loadLearners()
+  const old = learners.find((l) => l.id === fromId)
+  if (old) {
+    await saveLearner({ ...old, id: toId })
+    await (await db()).delete('learners', fromId)
+  }
+  return moved
+}
+
+/**
  * Removes specific sessions and everything recorded in them.
  *
  * Uses the same tombstone mechanism as a full erase, so a deleted session stays

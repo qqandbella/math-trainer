@@ -416,3 +416,49 @@ describe('deleting individual sessions', () => {
     expect((await loadAttempts()).map((a) => a.id)).toEqual(['b-1'])
   })
 })
+
+describe('joining an account that already tracks a learner', () => {
+  it('moves every local record onto the account learner', async () => {
+    const { relabelLearner, loadTombstones: tombs, saveWorking, loadWorkings } = await import('./db')
+    const { activeLearnerId } = await loadSettings()
+    const accountLearner = 'learner-from-account'
+
+    await saveAttempts([attempt('a1', activeLearnerId), attempt('a2', activeLearnerId)])
+    await saveSession(session('s1', activeLearnerId))
+    await saveWorking('a1', activeLearnerId, 'data:image/png;base64,AAA')
+
+    const moved = await relabelLearner(activeLearnerId, accountLearner)
+    expect(moved).toBe(3)
+
+    // Nothing may be left behind under the device's own id, or it would sit in
+    // a namespace no other device reads.
+    for (const a of await loadAttempts()) expect(a.learnerId).toBe(accountLearner)
+    for (const s of await loadSessions()) expect(s.learnerId).toBe(accountLearner)
+    for (const t of await tombs()) expect(t.learnerId).toBe(accountLearner)
+    expect((await loadWorkings(['a1'])).size).toBe(1)
+
+    const learners = await loadLearners()
+    expect(learners.map((l) => l.id)).toEqual([accountLearner])
+  })
+
+  it('is a no-op when the ids already agree', async () => {
+    const { relabelLearner } = await import('./db')
+    const { activeLearnerId } = await loadSettings()
+    await saveAttempts([attempt('a1', activeLearnerId)])
+    expect(await relabelLearner(activeLearnerId, activeLearnerId)).toBe(0)
+    expect((await loadAttempts())[0]?.learnerId).toBe(activeLearnerId)
+  })
+
+  it('leaves relabelled records ready to publish', async () => {
+    const { relabelLearner, requeueEverything, outboxIds, clearOutbox } = await import('./db')
+    const { activeLearnerId } = await loadSettings()
+    await saveAttempts([attempt('a1', activeLearnerId), attempt('a2', activeLearnerId)])
+    await clearOutbox(await outboxIds(activeLearnerId))
+
+    const accountLearner = 'account-learner'
+    await relabelLearner(activeLearnerId, accountLearner)
+    const queued = await requeueEverything(accountLearner)
+    expect(queued).toBe(2)
+    expect((await outboxIds(accountLearner)).sort()).toEqual(['a1', 'a2'])
+  })
+})
