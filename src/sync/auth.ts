@@ -79,9 +79,31 @@ export async function getFirebase(): Promise<FirebaseHandles> {
     import('firebase/firestore'),
   ])
   const app = getApps()[0] ?? initializeApp(firebaseConfig)
+
+  /**
+   * Session storage is forced to localStorage rather than Firebase's default
+   * IndexedDB.
+   *
+   * Opening the sign-in popup sends this page to the background, and Chrome on
+   * Android freezes a backgrounded page and tears down its IndexedDB
+   * connections - which surfaced as "Database is closing/hidden" from
+   * signInWithPopup, aborting a sign-in that was otherwise working. localStorage
+   * is synchronous and survives that.
+   */
+  let auth: Auth
+  try {
+    auth = authModule.initializeAuth(app, {
+      persistence: authModule.browserLocalPersistence,
+      popupRedirectResolver: authModule.browserPopupRedirectResolver,
+    })
+  } catch {
+    // Already initialised (a second call in the same page).
+    auth = authModule.getAuth(app)
+  }
+
   handles = {
     app,
-    auth: authModule.getAuth(app),
+    auth,
     db: firestoreModule.getFirestore(app),
   }
   return handles
@@ -156,6 +178,8 @@ export async function signIn(): Promise<AccountInfo | null> {
       return null
     }
     writeDiagnostic(`popup failed: ${code || message.slice(0, 90)} — trying redirect`)
+    // The redirect is known to fail where the browser partitions storage for
+    // the sign-in domain, so this is a last resort rather than an equal option.
     setPending(true)
     try {
       await mod.signInWithRedirect(auth, provider)
