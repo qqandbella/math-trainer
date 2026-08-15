@@ -25,7 +25,7 @@ export function relativeTime(from: number | null, now = Date.now()): string {
  * protects nothing and makes setting up each device unnecessarily awkward.
  */
 export function SyncPage({ navigate }: Props): ReactNode {
-  const { sync, signInToSync, signOutOfSyncing, runSync, attempts, settings, preloadSignIn } =
+  const { sync, signInToSync, signOutOfSyncing, runSync, attempts, preloadSignIn } =
     useAppState()
   const [report, setReport] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
@@ -138,7 +138,7 @@ export function SyncPage({ navigate }: Props): ReactNode {
               setChecking(true)
               void import('../../sync/diagnose')
                 .then(async ({ diagnoseSync, describeDiagnosis }) =>
-                  describeDiagnosis(await diagnoseSync(settings.activeLearnerId)),
+                  describeDiagnosis(await diagnoseSync()),
                 )
                 .then(setReport)
                 .catch((error: unknown) =>

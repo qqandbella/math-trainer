@@ -3,46 +3,51 @@ import type { Attempt, SessionRecord, Tombstone } from './types'
 /**
  * Deletion under a merging data model.
  *
- * Attempts merge by set union, which is what makes multi-device history
+ * History merges by set union across every device, which is what makes it
  * conflict-free - but a union has no way to express "this is gone". Removing
  * rows locally is undone by the next merge with any copy that predates the
- * removal, including an export file from last week. So a deletion is written
- * down, and every merge consults it.
+ * removal, including an export from last week. So a deletion is written down,
+ * and every merge consults it.
+ *
+ * A deletion names sessions. It never names a time span: a span deletes
+ * whatever happens to fall inside it, including practice from other devices
+ * that the person deleting had never seen. Naming sessions means a deletion
+ * removes exactly what was chosen, on every device, forever.
  *
  * These functions are pure and hold no storage assumptions, so the same rules
- * apply to a local erase, an import, and (later) a pull from a server.
+ * apply to a local erase, an import, and a pull from the server.
  */
 
-interface Deletable {
-  id: string
-  learnerId: string
-  at: number
-}
-
-/** True when a tombstone covers this record, i.e. the record is deleted. */
-export function isDeleted(record: Deletable, tombstones: readonly Tombstone[]): boolean {
+/** Every session id covered by these tombstones. */
+export function deletedSessionIds(tombstones: readonly Tombstone[]): Set<string> {
+  const ids = new Set<string>()
   for (const tombstone of tombstones) {
-    if (tombstone.learnerId !== record.learnerId) continue
-    if (tombstone.kind === 'purge') {
-      if (record.at <= tombstone.before) return true
-    } else if (tombstone.targetIds.includes(record.id)) {
-      return true
-    }
+    for (const sessionId of tombstone.sessionIds) ids.add(sessionId)
   }
-  return false
+  return ids
 }
 
-export function surviving<T extends Deletable>(
-  records: readonly T[],
+export function attemptIsDeleted(
+  attempt: Pick<Attempt, 'sessionId'>,
   tombstones: readonly Tombstone[],
-): T[] {
-  if (tombstones.length === 0) return records.slice()
-  return records.filter((record) => !isDeleted(record, tombstones))
+): boolean {
+  return deletedSessionIds(tombstones).has(attempt.sessionId)
 }
 
-/** Sessions are timestamped by their start, which is what a purge compares. */
-function asDeletable(session: SessionRecord): Deletable {
-  return { id: session.id, learnerId: session.learnerId, at: session.startedAt }
+export function sessionIsDeleted(
+  session: Pick<SessionRecord, 'id'>,
+  tombstones: readonly Tombstone[],
+): boolean {
+  return deletedSessionIds(tombstones).has(session.id)
+}
+
+export function survivingAttempts(
+  attempts: readonly Attempt[],
+  tombstones: readonly Tombstone[],
+): Attempt[] {
+  if (tombstones.length === 0) return attempts.slice()
+  const gone = deletedSessionIds(tombstones)
+  return attempts.filter((a) => !gone.has(a.sessionId))
 }
 
 export function survivingSessions(
@@ -50,76 +55,42 @@ export function survivingSessions(
   tombstones: readonly Tombstone[],
 ): SessionRecord[] {
   if (tombstones.length === 0) return sessions.slice()
-  return sessions.filter((session) => !isDeleted(asDeletable(session), tombstones))
-}
-
-export function survivingAttempts(
-  attempts: readonly Attempt[],
-  tombstones: readonly Tombstone[],
-): Attempt[] {
-  return surviving(attempts, tombstones)
-}
-
-export function makePurge(
-  learnerId: string,
-  deviceId: string,
-  now: number,
-  latestKnownAt = 0,
-): Tombstone {
-  return {
-    id: crypto.randomUUID(),
-    kind: 'purge',
-    learnerId,
-    // Anchored past anything already recorded, so a device whose clock runs
-    // ahead cannot leave records stranded on the far side of the boundary.
-    before: Math.max(now, latestKnownAt),
-    at: now,
-    deviceId,
-  }
-}
-
-export function makeRecordTombstone(
-  learnerId: string,
-  deviceId: string,
-  targetIds: string[],
-  now: number,
-): Tombstone {
-  return {
-    id: crypto.randomUUID(),
-    kind: 'record',
-    learnerId,
-    targetIds,
-    at: now,
-    deviceId,
-  }
+  const gone = deletedSessionIds(tombstones)
+  return sessions.filter((s) => !gone.has(s.id))
 }
 
 /**
- * Collapses redundant tombstones. A purge subsumes every earlier purge and any
- * record tombstone it already covers, so history does not accumulate a
- * deletion log that outgrows the data it deletes.
+ * One tombstone per session, which is what makes a deletion mergeable.
+ *
+ * "Reset everything" is not a distinct operation - it is a tombstone for each
+ * session currently stored. That keeps a reset as bounded as any other
+ * deletion: it removes the history that exists, not history that arrives
+ * afterwards from a device that was offline.
  */
-export function compactTombstones(tombstones: readonly Tombstone[]): Tombstone[] {
-  const latestPurge = new Map<string, number>()
-  for (const t of tombstones) {
-    if (t.kind !== 'purge') continue
-    const current = latestPurge.get(t.learnerId) ?? -1
-    if (t.before > current) latestPurge.set(t.learnerId, t.before)
-  }
+export function makeTombstones(
+  sessionIds: readonly string[],
+  learnerId: string,
+  deviceId: string,
+  now: number,
+): Tombstone[] {
+  return sessionIds.map((sessionId) => ({
+    id: crypto.randomUUID(),
+    sessionIds: [sessionId],
+    at: now,
+    deviceId,
+    learnerId,
+  }))
+}
 
+/** Drops tombstones that name nothing new, so the log cannot outgrow the data. */
+export function compactTombstones(tombstones: readonly Tombstone[]): Tombstone[] {
+  const seen = new Set<string>()
   const out: Tombstone[] = []
-  const keptPurge = new Set<string>()
-  for (const t of tombstones) {
-    const purgeBefore = latestPurge.get(t.learnerId)
-    if (t.kind === 'purge') {
-      if (t.before !== purgeBefore || keptPurge.has(t.learnerId)) continue
-      keptPurge.add(t.learnerId)
-      out.push(t)
-    } else {
-      // A record tombstone is redundant once a purge covers the same window.
-      if (purgeBefore !== undefined && t.at <= purgeBefore) continue
-      out.push(t)
-    }
+  for (const tombstone of tombstones) {
+    const fresh = tombstone.sessionIds.filter((id) => !seen.has(id))
+    if (fresh.length === 0) continue
+    for (const id of fresh) seen.add(id)
+    out.push(tombstone)
   }
   return out
 }

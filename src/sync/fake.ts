@@ -1,5 +1,5 @@
 import type { Attempt, SessionRecord, Tombstone } from '../core/types'
-import { isDeleted } from '../core/tombstones'
+import { deletedSessionIds } from '../core/tombstones'
 import type { LocalStore, PullResult, RecordSet, SyncBackend } from './types'
 
 /**
@@ -14,7 +14,6 @@ import type { LocalStore, PullResult, RecordSet, SyncBackend } from './types'
 interface StoredRecord {
   position: number
   kind: 'attempt' | 'session' | 'tombstone'
-  learnerId: string
   id: string
   value: Attempt | SessionRecord | Tombstone
 }
@@ -25,12 +24,12 @@ export class FakeServer {
   clock = 1_000_000
 
   /** Publishes records, assigning each the next server position. */
-  accept(learnerId: string, incoming: RecordSet): void {
+  accept(incoming: RecordSet): void {
     const put = (kind: StoredRecord['kind'], id: string, value: StoredRecord['value']): void => {
       // Create-only, exactly like the real security rules: an id that already
       // exists is left untouched rather than overwritten.
-      if (this.records.some((r) => r.id === id && r.learnerId === learnerId)) return
-      this.records.push({ position: this.nextPosition++, kind, learnerId, id, value })
+      if (this.records.some((r) => r.id === id)) return
+      this.records.push({ position: this.nextPosition++, kind, id, value })
     }
     for (const a of incoming.attempts) put('attempt', a.id, a)
     for (const s of incoming.sessions) put('session', s.id, s)
@@ -41,17 +40,17 @@ export class FakeServer {
    * Publishes a record at an explicit position, simulating a commit that lands
    * behind a cursor another device has already passed.
    */
-  acceptAtPosition(learnerId: string, position: number, records: RecordSet): void {
+  acceptAtPosition(position: number, records: RecordSet): void {
     for (const a of records.attempts) {
-      this.records.push({ position, kind: 'attempt', learnerId, id: a.id, value: a })
+      this.records.push({ position, kind: 'attempt', id: a.id, value: a })
     }
     for (const t of records.tombstones) {
-      this.records.push({ position, kind: 'tombstone', learnerId, id: t.id, value: t })
+      this.records.push({ position, kind: 'tombstone', id: t.id, value: t })
     }
   }
 
-  read(learnerId: string, since: number): PullResult {
-    const page = this.records.filter((r) => r.learnerId === learnerId && r.position >= since)
+  read(since: number): PullResult {
+    const page = this.records.filter((r) => r.position >= since)
     return {
       attempts: page.filter((r) => r.kind === 'attempt').map((r) => r.value as Attempt),
       sessions: page.filter((r) => r.kind === 'session').map((r) => r.value as SessionRecord),
@@ -77,13 +76,13 @@ export interface FaultOptions {
 
 export function createFakeBackend(server: FakeServer, faults: FaultOptions = {}): SyncBackend {
   return {
-    async pull(learnerId, since) {
+    async pull(since) {
       if (faults.failPull) throw faults.failPull
-      return server.read(learnerId, since)
+      return server.read(since)
     },
-    async push(learnerId, records) {
+    async push(records) {
       if (faults.failPush) throw faults.failPush
-      server.accept(learnerId, records)
+      server.accept(records)
     },
   }
 }
@@ -121,13 +120,12 @@ export class MemoryLocalStore implements LocalStore {
   }
 
   async applyTombstones(tombstones: readonly Tombstone[]): Promise<void> {
+    const gone = deletedSessionIds(tombstones)
     for (const [id, a] of this.attempts) {
-      if (isDeleted(a, tombstones)) this.attempts.delete(id)
+      if (gone.has(a.sessionId)) this.attempts.delete(id)
     }
     for (const [id, s] of this.sessions) {
-      if (isDeleted({ id: s.id, learnerId: s.learnerId, at: s.startedAt }, tombstones)) {
-        this.sessions.delete(id)
-      }
+      if (gone.has(s.id)) this.sessions.delete(id)
     }
   }
 
@@ -150,7 +148,7 @@ export class MemoryLocalStore implements LocalStore {
 
   /** Records local practice and queues it for the next sync. */
   record(learnerId: string, record: Attempt | SessionRecord | Tombstone): void {
-    if ('kind' in record) this.tombstones.set(record.id, record)
+    if ('sessionIds' in record) this.tombstones.set(record.id, record)
     else if ('mode' in record) this.sessions.set(record.id, record)
     else this.attempts.set(record.id, record)
     const queue = this.queued.get(learnerId) ?? []

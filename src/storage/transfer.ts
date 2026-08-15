@@ -1,5 +1,5 @@
 import type { Attempt, Learner, SessionRecord, Tombstone } from '../core/types'
-import { compactTombstones, isDeleted } from '../core/tombstones'
+import { attemptIsDeleted, compactTombstones, sessionIsDeleted } from '../core/tombstones'
 import {
   applyTombstonesLocally,
   deleteTombstones,
@@ -173,7 +173,7 @@ export async function mergeBundle(
     // survives would simply re-erase the records on the next merge.
     const covering = new Set(
       effectiveTombstones
-        .filter((t) => bundle.attempts.some((a) => isDeleted(a, [t])))
+        .filter((t) => bundle.attempts.some((a) => attemptIsDeleted(a, [t])))
         .map((t) => t.id),
     )
     effectiveTombstones = effectiveTombstones.filter((t) => !covering.has(t.id))
@@ -198,12 +198,14 @@ export async function mergeBundle(
   const haveSession = new Set(existingSessions.map((s) => s.id))
 
   const candidateAttempts = bundle.attempts.filter((a) => !haveAttempt.has(a.id))
-  const survivingAttempts = candidateAttempts.filter((a) => !isDeleted(a, effectiveTombstones))
+  const survivingAttempts = candidateAttempts.filter(
+    (a) => !attemptIsDeleted(a, effectiveTombstones),
+  )
   const blocked = candidateAttempts.length - survivingAttempts.length
 
   const candidateSessions = bundle.sessions.filter((s) => !haveSession.has(s.id))
   const survivingSessions = candidateSessions.filter(
-    (s) => !isDeleted({ id: s.id, learnerId: s.learnerId, at: s.startedAt }, effectiveTombstones),
+    (s) => !sessionIsDeleted(s, effectiveTombstones),
   )
 
   await saveAttempts(survivingAttempts)

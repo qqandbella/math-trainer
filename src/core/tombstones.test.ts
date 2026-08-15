@@ -1,23 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import {
+  attemptIsDeleted,
   compactTombstones,
-  isDeleted,
-  makePurge,
-  makeRecordTombstone,
+  deletedSessionIds,
+  makeTombstones,
+  sessionIsDeleted,
   survivingAttempts,
   survivingSessions,
 } from './tombstones'
 import type { Attempt, SessionRecord, Tombstone } from './types'
 
 const L1 = 'learner-1'
-const L2 = 'learner-2'
 const DEV = 'device-a'
 
-function attempt(id: string, at: number, learnerId = L1): Attempt {
+function attempt(id: string, sessionId: string, at = 1000): Attempt {
   return {
     id,
-    learnerId,
-    sessionId: 's',
+    learnerId: L1,
+    sessionId,
     skillId: 'mul_3x2',
     prompt: '1',
     answer: 1,
@@ -28,10 +28,10 @@ function attempt(id: string, at: number, learnerId = L1): Attempt {
   }
 }
 
-function session(id: string, startedAt: number, learnerId = L1): SessionRecord {
+function session(id: string, startedAt = 1000): SessionRecord {
   return {
     id,
-    learnerId,
+    learnerId: L1,
     mode: 'daily',
     startedAt,
     endedAt: startedAt + 1000,
@@ -44,105 +44,88 @@ function session(id: string, startedAt: number, learnerId = L1): SessionRecord {
   }
 }
 
-describe('tombstones', () => {
-  it('a purge removes everything recorded up to its boundary', () => {
-    const purge = makePurge(L1, DEV, 1000)
-    const kept = survivingAttempts(
-      [attempt('a', 500), attempt('b', 1000), attempt('c', 1500)],
-      [purge],
-    )
-    expect(kept.map((a) => a.id)).toEqual(['c'])
+describe('deleting a session', () => {
+  it('removes the session and everything recorded in it', () => {
+    const [t] = makeTombstones(['s1'], L1, DEV, 5000)
+    const attempts = [attempt('a', 's1'), attempt('b', 's1'), attempt('c', 's2')]
+    expect(survivingAttempts(attempts, [t as Tombstone]).map((a) => a.id)).toEqual(['c'])
+    expect(survivingSessions([session('s1'), session('s2')], [t as Tombstone])).toHaveLength(1)
   })
 
-  it('work done after a purge survives it', () => {
-    const purge = makePurge(L1, DEV, 1000)
-    expect(survivingAttempts([attempt('later', 2000)], [purge])).toHaveLength(1)
+  it('makes one tombstone per session, so a deletion merges piece by piece', () => {
+    const stones = makeTombstones(['s1', 's2', 's3'], L1, DEV, 5000)
+    expect(stones).toHaveLength(3)
+    expect(stones.map((t) => t.sessionIds)).toEqual([['s1'], ['s2'], ['s3']])
   })
 
-  it('is anchored past existing records, so a fast clock cannot strand data', () => {
-    // Device clock says 1000, but a record already exists stamped 5000.
-    const purge = makePurge(L1, DEV, 1000, 5000)
-    expect(purge.kind === 'purge' && purge.before).toBe(5000)
-    expect(survivingAttempts([attempt('ahead', 4000)], [purge])).toHaveLength(0)
+  it('covers attempts from that session which this device has never seen', () => {
+    // This is the property a time window is reached for, and the reason it is
+    // not needed: a session names its own contents, whenever they arrive.
+    const [t] = makeTombstones(['s1'], L1, DEV, 1000)
+    const arrivingLater = attempt('from-another-device', 's1', 9_999_999)
+    expect(attemptIsDeleted(arrivingLater, [t as Tombstone])).toBe(true)
   })
 
-  it('does not touch another learner', () => {
-    const purge = makePurge(L1, DEV, 10_000)
-    const kept = survivingAttempts([attempt('mine', 500), attempt('theirs', 500, L2)], [purge])
-    expect(kept.map((a) => a.id)).toEqual(['theirs'])
+  it('never touches practice from a session it does not name', () => {
+    // The failure a time window caused: a reset on one device deleted history
+    // from every other device that happened to be older.
+    const [t] = makeTombstones(['mine'], L1, DEV, 9_000_000)
+    const somebodyElses = attempt('older', 'hers', 1)
+    expect(attemptIsDeleted(somebodyElses, [t as Tombstone])).toBe(false)
+    expect(sessionIsDeleted(session('hers', 1), [t as Tombstone])).toBe(false)
   })
 
-  it('removes individually targeted records', () => {
-    const t = makeRecordTombstone(L1, DEV, ['b'], 9999)
-    const kept = survivingAttempts([attempt('a', 1), attempt('b', 2)], [t])
-    expect(kept.map((a) => a.id)).toEqual(['a'])
+  it('is idempotent, and order-independent', () => {
+    const a = makeTombstones(['s1'], L1, DEV, 1000)[0] as Tombstone
+    const b = makeTombstones(['s2'], L1, DEV, 2000)[0] as Tombstone
+    const records = [attempt('x', 's1'), attempt('y', 's2'), attempt('z', 's3')]
+    const once = survivingAttempts(records, [a, b])
+    expect(survivingAttempts(once, [a, b])).toEqual(once)
+    expect(survivingAttempts(records, [b, a])).toEqual(once)
   })
 
-  it('judges sessions by when they started', () => {
-    const purge = makePurge(L1, DEV, 1000)
-    const kept = survivingSessions([session('s1', 500), session('s2', 1500)], [purge])
-    expect(kept.map((s) => s.id)).toEqual(['s2'])
+  it('reports the full set of deleted sessions', () => {
+    const stones = makeTombstones(['s1', 's2'], L1, DEV, 1000)
+    expect([...deletedSessionIds(stones)].sort()).toEqual(['s1', 's2'])
+    expect(deletedSessionIds([]).size).toBe(0)
+  })
+})
+
+describe('resetting everything', () => {
+  it('is a tombstone per stored session, not a rule about time', () => {
+    const stored = ['s1', 's2', 's3']
+    const stones = makeTombstones(stored, L1, DEV, 5000)
+    const records = stored.map((id, i) => attempt(`a${i}`, id))
+    expect(survivingAttempts(records, stones)).toEqual([])
   })
 
-  it('is idempotent: applying the same purge twice changes nothing', () => {
-    const purge = makePurge(L1, DEV, 1000)
-    const once = survivingAttempts([attempt('a', 500), attempt('c', 1500)], [purge])
-    const twice = survivingAttempts(once, [purge])
-    expect(twice).toEqual(once)
-  })
-
-  it('is order-independent: tombstones commute', () => {
-    const p = makePurge(L1, DEV, 1000)
-    const r = makeRecordTombstone(L1, DEV, ['late'], 2000)
-    const records = [attempt('early', 500), attempt('late', 1500), attempt('kept', 1600)]
-    expect(survivingAttempts(records, [p, r])).toEqual(survivingAttempts(records, [r, p]))
-  })
-
-  it('reports coverage for a single record', () => {
-    const purge = makePurge(L1, DEV, 1000)
-    expect(isDeleted(attempt('x', 999), [purge])).toBe(true)
-    expect(isDeleted(attempt('x', 1001), [purge])).toBe(false)
-    expect(isDeleted(attempt('x', 999), [])).toBe(false)
+  it('leaves a session that arrives afterwards from an offline device', () => {
+    // A reset clears the history that exists. Practice done elsewhere before
+    // the reset, but synced after it, is not swallowed - which is exactly what
+    // "everything before now" got wrong.
+    const stones = makeTombstones(['s1'], L1, DEV, 5000)
+    const late = attempt('late', 's-offline', 10)
+    expect(survivingAttempts([late], stones)).toHaveLength(1)
   })
 })
 
 describe('compaction', () => {
-  it('keeps only the newest purge per learner', () => {
-    const list: Tombstone[] = [
-      makePurge(L1, DEV, 1000),
-      makePurge(L1, DEV, 5000),
-      makePurge(L2, DEV, 2000),
+  it('drops tombstones that name nothing new', () => {
+    const list = [
+      ...makeTombstones(['s1'], L1, DEV, 1000),
+      ...makeTombstones(['s1'], L1, DEV, 2000),
+      ...makeTombstones(['s2'], L1, DEV, 3000),
     ]
-    const compacted = compactTombstones(list)
-    expect(compacted).toHaveLength(2)
-    const forL1 = compacted.find((t) => t.learnerId === L1)
-    expect(forL1?.kind === 'purge' && forL1.before).toBe(5000)
-  })
-
-  it('drops record tombstones a later purge already covers', () => {
-    const list: Tombstone[] = [
-      makeRecordTombstone(L1, DEV, ['a'], 1000),
-      makePurge(L1, DEV, 5000),
-      makeRecordTombstone(L1, DEV, ['b'], 9000),
-    ]
-    const compacted = compactTombstones(list)
-    expect(compacted).toHaveLength(2)
-    expect(compacted.some((t) => t.kind === 'record' && t.targetIds.includes('b'))).toBe(true)
-    expect(compacted.some((t) => t.kind === 'record' && t.targetIds.includes('a'))).toBe(false)
+    expect(compactTombstones(list)).toHaveLength(2)
   })
 
   it('does not change what survives', () => {
-    const list: Tombstone[] = [
-      makeRecordTombstone(L1, DEV, ['a'], 1000),
-      makePurge(L1, DEV, 5000),
-      makeRecordTombstone(L1, DEV, ['keep-me'], 9000),
+    const list = [
+      ...makeTombstones(['s1'], L1, DEV, 1000),
+      ...makeTombstones(['s1'], L1, DEV, 2000),
+      ...makeTombstones(['s2'], L1, DEV, 3000),
     ]
-    const records = [
-      attempt('a', 100),
-      attempt('b', 6000),
-      attempt('keep-me', 7000),
-      attempt('c', 8000),
-    ]
+    const records = [attempt('a', 's1'), attempt('b', 's2'), attempt('c', 's3')]
     expect(survivingAttempts(records, compactTombstones(list))).toEqual(
       survivingAttempts(records, list),
     )

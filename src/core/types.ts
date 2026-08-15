@@ -84,24 +84,26 @@ export interface Learner {
  * with a device - or an export file - that predates it. Tombstones survive a
  * union, so a deletion is as durable as the records it removes.
  */
-export type Tombstone =
-  | {
-      id: string
-      kind: 'purge'
-      learnerId: string
-      /** Everything recorded at or before this instant is gone. */
-      before: number
-      at: number
-      deviceId: string
-    }
-  | {
-      id: string
-      kind: 'record'
-      learnerId: string
-      targetIds: string[]
-      at: number
-      deviceId: string
-    }
+export interface Tombstone {
+  id: string
+  /**
+   * The sessions this removes, with every attempt belonging to them.
+   *
+   * A session is the unit of deletion because it is the unit a person thinks
+   * in: "that run was mine, not hers". Naming sessions rather than a time
+   * window also bounds what a deletion can reach - it can never silently take
+   * records it has never seen, which a "everything before T" rule does the
+   * moment two devices merge.
+   *
+   * Normally one entry; the field is a list so a deletion of several sessions
+   * made in one action stays one record.
+   */
+  sessionIds: string[]
+  at: number
+  /** Annotation only: which device recorded this. Never a partition key. */
+  deviceId: string
+  learnerId: string
+}
 
 export interface Attempt {
   id: string

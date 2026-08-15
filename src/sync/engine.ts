@@ -1,5 +1,5 @@
-import type { Attempt, SessionRecord, Tombstone } from '../core/types'
-import { compactTombstones, isDeleted } from '../core/tombstones'
+import type { Attempt, Tombstone } from '../core/types'
+import { compactTombstones, deletedSessionIds } from '../core/tombstones'
 import type { LocalStore, RecordSet, SyncBackend, SyncResult } from './types'
 
 /**
@@ -12,7 +12,7 @@ import type { LocalStore, RecordSet, SyncBackend, SyncResult } from './types'
  */
 export const DEFAULT_OVERLAP_MS = 5 * 60 * 1000
 
-/** Beyond this, purge boundaries stop being trustworthy and the user is warned. */
+/** Beyond this the device clock is reported as suspect. */
 export const CLOCK_SKEW_WARN_MS = 5 * 60 * 1000
 
 export interface SyncOptions {
@@ -21,12 +21,17 @@ export interface SyncOptions {
   now?: () => number
 }
 
-function sessionAsDeletable(s: SessionRecord): { id: string; learnerId: string; at: number } {
-  return { id: s.id, learnerId: s.learnerId, at: s.startedAt }
-}
-
 /**
- * One full reconciliation for a single learner: pull, merge, push.
+ * One full reconciliation: pull, merge, push.
+ *
+ * History is merged across every device in the account. A device id is an
+ * annotation on a session, never a partition - so there is one shared pool of
+ * records and a device's own id has no effect on what it sees.
+ *
+ * Incoming records are stamped with this device's learner id, exactly as an
+ * import is. Local indexes and deletions are keyed by learner, so a record
+ * arriving under the id another device happened to generate would sit outside
+ * every local query without being visibly absent.
  *
  * Order matters. Tombstones are merged before records so that an erase
  * performed elsewhere is enforced against what arrives in the same pass, rather
@@ -59,7 +64,13 @@ export async function syncOnce(
   try {
     const cursor = await local.getCursor(learnerId)
     const since = Math.max(0, cursor - overlapMs)
-    const incoming = await backend.pull(learnerId, since)
+    const raw = await backend.pull(since)
+    const incoming = {
+      ...raw,
+      attempts: raw.attempts.map((a) => ({ ...a, learnerId })),
+      sessions: raw.sessions.map((s) => ({ ...s, learnerId })),
+      tombstones: raw.tombstones.map((t) => ({ ...t, learnerId })),
+    }
 
     // Snapshot before any deletion is applied. Counting afterwards would always
     // report zero, because the rows being counted are already gone.
@@ -81,18 +92,19 @@ export async function syncOnce(
     // 2. Records the tombstones do not cover, and that are genuinely new.
     //    "Already have" is judged against what survived the deletions above, so
     //    a record that was just removed is not mistaken for one already held.
-    const survivingAttempts = attemptsBefore.filter((a) => !isDeleted(a, effective))
-    const survivingSessions = sessionsBefore.filter(
-      (s) => !isDeleted(sessionAsDeletable(s), effective),
+    const gone = deletedSessionIds(effective)
+    const haveAttempt = new Set(
+      attemptsBefore.filter((a) => !gone.has(a.sessionId)).map((a) => a.id),
     )
-    const haveAttempt = new Set(survivingAttempts.map((a) => a.id))
-    const haveSession = new Set(survivingSessions.map((s) => s.id))
+    const haveSession = new Set(
+      sessionsBefore.filter((s) => !gone.has(s.id)).map((s) => s.id),
+    )
 
     const attemptsToSave = incoming.attempts.filter(
-      (a) => !haveAttempt.has(a.id) && !isDeleted(a, effective),
+      (a) => !haveAttempt.has(a.id) && !gone.has(a.sessionId),
     )
     const sessionsToSave = incoming.sessions.filter(
-      (s) => !haveSession.has(s.id) && !isDeleted(sessionAsDeletable(s), effective),
+      (s) => !haveSession.has(s.id) && !gone.has(s.id),
     )
     if (attemptsToSave.length > 0) await local.saveAttempts(attemptsToSave)
     if (sessionsToSave.length > 0) await local.saveSessions(sessionsToSave)
@@ -124,7 +136,7 @@ export async function syncOnce(
       }
       pushedRecords =
         outgoing.attempts.length + outgoing.sessions.length + outgoing.tombstones.length
-      if (pushedRecords > 0) await backend.push(learnerId, outgoing)
+      if (pushedRecords > 0) await backend.push(outgoing)
       result.pushedRecords = pushedRecords
       // Clear the whole queue, including ids whose records no longer exist:
       // leaving them would retry forever.
@@ -143,7 +155,8 @@ export async function syncOnce(
 
 function countCovered(attempts: readonly Attempt[], tombstones: readonly Tombstone[]): number {
   if (tombstones.length === 0) return 0
-  return attempts.filter((a) => isDeleted(a, tombstones)).length
+  const gone = deletedSessionIds(tombstones)
+  return attempts.filter((a) => gone.has(a.sessionId)).length
 }
 
 function isOffline(error: unknown): boolean {

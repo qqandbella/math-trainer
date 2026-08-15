@@ -55,6 +55,33 @@ service cloud.firestore {
       allow update: if isMember(hid);
       allow delete: if false;
 
+      // ---- one shared pool of history per household ----
+      //
+      // History merges across every device in the account. A device id is an
+      // annotation on a session, never a partition, so there is no level
+      // between the household and its records. The retired `learners/{id}`
+      // layout below gave each device a private namespace by accident.
+
+      match /attempts/{recordId} {
+        allow read: if isMember(hid);
+        allow create: if isMember(hid) && hasServerStamp() && idMatchesPayload(recordId);
+        allow update, delete: if false;
+      }
+
+      match /sessions/{recordId} {
+        allow read: if isMember(hid);
+        allow create: if isMember(hid) && hasServerStamp() && idMatchesPayload(recordId);
+        allow update, delete: if false;
+      }
+
+      match /tombstones/{recordId} {
+        allow read: if isMember(hid);
+        allow create: if isMember(hid) && hasServerStamp() && idMatchesPayload(recordId);
+        allow update, delete: if false;
+      }
+
+      // Retained so a device that has not upgraded keeps working, and so its
+      // history can be read across into the pool above.
       match /learners/{learnerId} {
         allow read: if isMember(hid);
         allow create, update: if isMember(hid);

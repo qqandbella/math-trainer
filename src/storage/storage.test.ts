@@ -219,7 +219,8 @@ describe('erase and import', () => {
     await saveAttempts([attempt('old', activeLearnerId, T0)])
     await erasePracticeData(activeLearnerId, deviceId)
 
-    const after = attempt('new', activeLearnerId, Date.now() + 60_000)
+    // A new session, which no existing deletion names.
+    const after = { ...attempt('new', activeLearnerId, Date.now() + 60_000), sessionId: 'sess-2' }
     await saveAttempts([after])
     const tombstones = await loadTombstones()
     expect(tombstones).toHaveLength(1)
@@ -417,48 +418,3 @@ describe('deleting individual sessions', () => {
   })
 })
 
-describe('joining an account that already tracks a learner', () => {
-  it('moves every local record onto the account learner', async () => {
-    const { relabelLearner, loadTombstones: tombs, saveWorking, loadWorkings } = await import('./db')
-    const { activeLearnerId } = await loadSettings()
-    const accountLearner = 'learner-from-account'
-
-    await saveAttempts([attempt('a1', activeLearnerId), attempt('a2', activeLearnerId)])
-    await saveSession(session('s1', activeLearnerId))
-    await saveWorking('a1', activeLearnerId, 'data:image/png;base64,AAA')
-
-    const moved = await relabelLearner(activeLearnerId, accountLearner)
-    expect(moved).toBe(3)
-
-    // Nothing may be left behind under the device's own id, or it would sit in
-    // a namespace no other device reads.
-    for (const a of await loadAttempts()) expect(a.learnerId).toBe(accountLearner)
-    for (const s of await loadSessions()) expect(s.learnerId).toBe(accountLearner)
-    for (const t of await tombs()) expect(t.learnerId).toBe(accountLearner)
-    expect((await loadWorkings(['a1'])).size).toBe(1)
-
-    const learners = await loadLearners()
-    expect(learners.map((l) => l.id)).toEqual([accountLearner])
-  })
-
-  it('is a no-op when the ids already agree', async () => {
-    const { relabelLearner } = await import('./db')
-    const { activeLearnerId } = await loadSettings()
-    await saveAttempts([attempt('a1', activeLearnerId)])
-    expect(await relabelLearner(activeLearnerId, activeLearnerId)).toBe(0)
-    expect((await loadAttempts())[0]?.learnerId).toBe(activeLearnerId)
-  })
-
-  it('leaves relabelled records ready to publish', async () => {
-    const { relabelLearner, requeueEverything, outboxIds, clearOutbox } = await import('./db')
-    const { activeLearnerId } = await loadSettings()
-    await saveAttempts([attempt('a1', activeLearnerId), attempt('a2', activeLearnerId)])
-    await clearOutbox(await outboxIds(activeLearnerId))
-
-    const accountLearner = 'account-learner'
-    await relabelLearner(activeLearnerId, accountLearner)
-    const queued = await requeueEverything(accountLearner)
-    expect(queued).toBe(2)
-    expect((await outboxIds(accountLearner)).sort()).toEqual(['a1', 'a2'])
-  })
-})

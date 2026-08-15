@@ -14,7 +14,6 @@ import { signIn as startSignIn, preloadAuth } from '../sync/auth'
 import {
   DEFAULT_SETTINGS,
   loadAttempts,
-  loadLearners,
   loadSessions,
   loadSettings,
   saveAttempts,
@@ -195,29 +194,22 @@ export function AppStateProvider({ children }: { children: ReactNode }): ReactNo
           setSettings((prev) => ({ ...prev, syncEnabled: true, syncAccountUid: account.uid }))
         }
         void (async () => {
-          // Learner identity is settled before anything syncs. Sync is scoped
-          // per learner and each device mints its own id, so until the devices
-          // on an account agree on one, each reads an empty namespace.
-          let learnerId = settings.activeLearnerId
-          try {
-            const local = (await loadLearners()).find((l) => l.id === learnerId)
-            if (local) {
-              const { reconcileLearner } = await import('../sync/learner')
-              const agreed = await reconcileLearner(local)
-              if (agreed !== learnerId) {
-                const { relabelLearner, requeueEverything } = await import('../storage/db')
-                await relabelLearner(learnerId, agreed)
-                await saveSettings({ activeLearnerId: agreed })
-                setSettings((prev) => ({ ...prev, activeLearnerId: agreed }))
-                // This device's records were pushed under the old id, so the
-                // outbox is empty; without re-queueing they would never reach
-                // the shared namespace.
-                await requeueEverything(agreed)
-                learnerId = agreed
-              }
+          const learnerId = settings.activeLearnerId
+          // History now lives in one pool per household. A device that last
+          // synced under the retired per-device layout still has records there,
+          // so they are carried across once and re-published into the pool.
+          if (!settings.legacyLayoutMoved && learnerId) {
+            try {
+              const { pullLegacyLayout } = await import('../sync/legacy')
+              await pullLegacyLayout(learnerId)
+              const { requeueEverything } = await import('../storage/db')
+              await requeueEverything(learnerId)
+              await saveSettings({ legacyLayoutMoved: true })
+              setSettings((prev) => ({ ...prev, legacyLayoutMoved: true }))
+            } catch {
+              // Offline or refused: retried on the next sign-in, since the flag
+              // is only set once the move has actually completed.
             }
-          } catch {
-            // Offline or refused: reconciliation retries on the next sign-in.
           }
 
           const { fetchAccountSecret } = await import('../sync/account')

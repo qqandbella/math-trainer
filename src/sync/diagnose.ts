@@ -1,33 +1,24 @@
-import type { Tombstone } from '../core/types'
-import { isDeleted } from '../core/tombstones'
-
-export interface LearnerCounts {
-  learnerId: string
-  name: string
-  attempts: number
-  sessions: number
-  tombstones: number
-}
+import type { SessionRecord, Tombstone } from '../core/types'
+import { deletedSessionIds } from '../core/tombstones'
 
 export interface SyncDiagnosis {
-  activeLearnerId: string
-  learners: LearnerCounts[]
   local: { attempts: number; sessions: number; tombstones: number }
-  /** Cloud sessions the tombstones would hide, whatever the cause. */
-  hiddenSessions: number
-  purges: { at: number; before: number; deviceId: string; learnerId: string }[]
+  cloud: { attempts: number; sessions: number; tombstones: number }
+  /** Cloud sessions a deletion covers, which is why they are not shown. */
+  deletedSessions: number
+  /** Records still sitting in the retired per-device layout. */
+  legacy: { learnerId: string; attempts: number; sessions: number }[]
 }
 
 /**
- * Reports what the account actually holds, per learner.
+ * Reports what the account actually holds.
  *
- * Sync failures all present identically - a short history - while the causes
- * are opposite: records sitting under a learner id nobody else reads, versus
- * records that arrive and are then hidden by a deletion. Guessing between them
- * from the symptom is how this bug survived two rounds of fixes, so the app
- * states the facts instead.
+ * Every sync failure looks the same from the outside - a short history - while
+ * the causes are opposite: records nobody else reads, or records that arrive
+ * and are then deleted. Guessing between them from the symptom is how this bug
+ * survived two rounds of fixes, so the app states the facts instead.
  */
-export async function diagnoseSync(activeLearnerId: string): Promise<SyncDiagnosis> {
+export async function diagnoseSync(): Promise<SyncDiagnosis> {
   const [{ getFirebase }, { fetchAccountLearners }, storage] = await Promise.all([
     import('./auth'),
     import('./account'),
@@ -38,47 +29,29 @@ export async function diagnoseSync(activeLearnerId: string): Promise<SyncDiagnos
   const user = auth.currentUser
   if (!user) throw new Error('Not signed in.')
 
-  const known = await fetchAccountLearners()
-  // A learner the device uses but has never published would otherwise be
-  // missing from the report, which is itself the interesting case.
-  const ids = [...new Set([...known.map((l) => l.id), activeLearnerId])].filter(Boolean)
+  const [attempts, sessions, tombstones] = await Promise.all([
+    getDocs(collection(db, 'households', user.uid, 'attempts')),
+    getDocs(collection(db, 'households', user.uid, 'sessions')),
+    getDocs(collection(db, 'households', user.uid, 'tombstones')),
+  ])
 
-  const learners: LearnerCounts[] = []
-  let hiddenSessions = 0
-  const purges: SyncDiagnosis['purges'] = []
+  const gone = deletedSessionIds(tombstones.docs.map((d) => d.data() as Tombstone))
+  const deletedSessions = sessions.docs.filter((entry) =>
+    gone.has((entry.data() as SessionRecord).id),
+  ).length
 
-  for (const learnerId of ids) {
-    const base = ['households', user.uid, 'learners', learnerId] as const
-    const [attempts, sessions, tombstones] = await Promise.all([
+  const legacy: SyncDiagnosis['legacy'] = []
+  for (const learner of await fetchAccountLearners()) {
+    const base = ['households', user.uid, 'learners', learner.id] as const
+    const [oldAttempts, oldSessions] = await Promise.all([
       getDocs(collection(db, ...base, 'attempts')),
       getDocs(collection(db, ...base, 'sessions')),
-      getDocs(collection(db, ...base, 'tombstones')),
     ])
-
-    const stones = tombstones.docs.map((d) => d.data() as Tombstone)
-    for (const stone of stones) {
-      if (stone.kind === 'purge') {
-        purges.push({
-          at: stone.at,
-          before: stone.before,
-          deviceId: stone.deviceId,
-          learnerId,
-        })
-      }
-    }
-    for (const entry of sessions.docs) {
-      const s = entry.data() as { id: string; learnerId: string; startedAt: number }
-      if (isDeleted({ id: s.id, learnerId: s.learnerId, at: s.startedAt }, stones)) {
-        hiddenSessions++
-      }
-    }
-
-    learners.push({
-      learnerId,
-      name: known.find((l) => l.id === learnerId)?.name ?? '',
-      attempts: attempts.size,
-      sessions: sessions.size,
-      tombstones: tombstones.size,
+    if (oldAttempts.size === 0 && oldSessions.size === 0) continue
+    legacy.push({
+      learnerId: learner.id,
+      attempts: oldAttempts.size,
+      sessions: oldSessions.size,
     })
   }
 
@@ -89,36 +62,32 @@ export async function diagnoseSync(activeLearnerId: string): Promise<SyncDiagnos
   ])
 
   return {
-    activeLearnerId,
-    learners,
     local: {
       attempts: localAttempts.length,
       sessions: localSessions.length,
       tombstones: localTombstones.length,
     },
-    hiddenSessions,
-    purges,
+    cloud: {
+      attempts: attempts.size,
+      sessions: sessions.size,
+      tombstones: tombstones.size,
+    },
+    deletedSessions,
+    legacy,
   }
 }
 
 /** A short, readable rendering - this gets read off a phone screen. */
 export function describeDiagnosis(d: SyncDiagnosis): string {
-  const lines: string[] = []
-  lines.push(`this device uses learner ${d.activeLearnerId.slice(0, 8)}`)
-  lines.push(`local: ${d.local.sessions} sessions, ${d.local.attempts} attempts`)
-  lines.push(`account holds ${d.learners.length} learner(s):`)
-  for (const l of d.learners) {
-    const mark = l.learnerId === d.activeLearnerId ? '*' : ' '
-    lines.push(
-      `${mark} ${l.learnerId.slice(0, 8)} — ${l.sessions} sessions, ` +
-        `${l.attempts} attempts, ${l.tombstones} deletions`,
-    )
+  const lines = [
+    `this device: ${d.local.sessions} sessions, ${d.local.attempts} attempts`,
+    `account: ${d.cloud.sessions} sessions, ${d.cloud.attempts} attempts, ` +
+      `${d.cloud.tombstones} deletions`,
+  ]
+  if (d.deletedSessions > 0) lines.push(`${d.deletedSessions} session(s) deleted on purpose`)
+  for (const l of d.legacy) {
+    lines.push(`older layout ${l.learnerId.slice(0, 8)}: ${l.sessions} sessions not yet moved`)
   }
-  if (d.hiddenSessions > 0) {
-    lines.push(`${d.hiddenSessions} cloud session(s) hidden by a deletion`)
-  }
-  for (const p of d.purges) {
-    lines.push(`purge: everything before ${new Date(p.before).toLocaleString()}`)
-  }
+  if (d.legacy.length === 0) lines.push('nothing left in the older layout')
   return lines.join('\n')
 }

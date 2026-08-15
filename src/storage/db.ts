@@ -26,6 +26,8 @@ export interface Settings {
   dailyProblemCount: number
   /** Which learner new practice is recorded against. */
   activeLearnerId: string
+  /** Set once this device's records have left the retired per-device layout. */
+  legacyLayoutMoved: boolean
   /** The account this device last synced with, to detect a switch. */
   syncAccountUid: string
   /**
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   parentTotpSecret: null,
   deviceId: '',
   activeLearnerId: '',
+  legacyLayoutMoved: false,
   syncAccountUid: '',
   syncEnabled: false,
   createdAt: 0,
@@ -106,7 +109,7 @@ interface TrainerDB extends DBSchema {
 }
 
 const DB_NAME = 'math-trainer'
-const DB_VERSION = 4
+const DB_VERSION = 5
 
 let dbPromise: Promise<IDBPDatabase<TrainerDB>> | null = null
 
@@ -188,6 +191,42 @@ function db(): Promise<IDBPDatabase<TrainerDB>> {
         if (oldVersion < 4) {
           const workings = database.createObjectStore('workings', { keyPath: 'attemptId' })
           workings.createIndex('by-learner', 'learnerId')
+        }
+
+        if (oldVersion < 5) {
+          // Deletion becomes session-scoped. The old shapes were a list of
+          // record ids, and a time window.
+          const store = tx.objectStore('tombstones')
+          for await (const cursor of store.iterate()) {
+            const old = cursor.value as unknown as {
+              id: string
+              kind?: string
+              targetIds?: string[]
+              learnerId: string
+              at: number
+              deviceId: string
+            }
+            if (old.kind === 'purge') {
+              // A window deletes whatever falls inside it, including practice
+              // from other devices that the person deleting never saw. There is
+              // no faithful translation, and keeping it would silently erase
+              // the rest of the household's history the moment it merged.
+              await cursor.delete()
+              continue
+            }
+            if (Array.isArray(old.targetIds)) {
+              // The old list held session ids alongside their attempt ids.
+              // Carrying all of them across is exact: an attempt id can never
+              // match a session id, so the extras cover nothing.
+              await cursor.update({
+                id: old.id,
+                sessionIds: old.targetIds,
+                learnerId: old.learnerId,
+                at: old.at,
+                deviceId: old.deviceId,
+              })
+            }
+          }
         }
       },
     })
@@ -416,13 +455,14 @@ export async function applyTombstonesLocally(
   tombstones: readonly Tombstone[],
 ): Promise<{ attemptsRemoved: number; sessionsRemoved: number }> {
   if (tombstones.length === 0) return { attemptsRemoved: 0, sessionsRemoved: 0 }
-  const { isDeleted } = await import('../core/tombstones')
+  const { deletedSessionIds } = await import('../core/tombstones')
+  const gone = deletedSessionIds(tombstones)
   const database = await db()
 
   let attemptsRemoved = 0
   const attemptTx = database.transaction('attempts', 'readwrite')
   for await (const cursor of attemptTx.store.iterate()) {
-    if (isDeleted(cursor.value, tombstones)) {
+    if (gone.has(cursor.value.sessionId)) {
       await cursor.delete()
       attemptsRemoved++
     }
@@ -432,8 +472,7 @@ export async function applyTombstonesLocally(
   let sessionsRemoved = 0
   const sessionTx = database.transaction('sessions', 'readwrite')
   for await (const cursor of sessionTx.store.iterate()) {
-    const s = cursor.value
-    if (isDeleted({ id: s.id, learnerId: s.learnerId, at: s.startedAt }, tombstones)) {
+    if (gone.has(cursor.value.id)) {
       await cursor.delete()
       sessionsRemoved++
     }
@@ -492,58 +531,6 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
 }
 
 /**
- * Moves every local record onto a different learner id.
- *
- * Used when a device joins an account that already tracks a learner: its own
- * generated id has to give way, or its practice would sit in a namespace no
- * other device reads.
- */
-export async function relabelLearner(fromId: string, toId: string): Promise<number> {
-  if (fromId === toId) return 0
-  const database = await db()
-  let moved = 0
-
-  const attemptTx = database.transaction('attempts', 'readwrite')
-  for await (const cursor of attemptTx.store.iterate()) {
-    if (cursor.value.learnerId !== fromId) continue
-    await cursor.update({ ...cursor.value, learnerId: toId })
-    moved++
-  }
-  await attemptTx.done
-
-  const sessionTx = database.transaction('sessions', 'readwrite')
-  for await (const cursor of sessionTx.store.iterate()) {
-    if (cursor.value.learnerId !== fromId) continue
-    await cursor.update({ ...cursor.value, learnerId: toId })
-    moved++
-  }
-  await sessionTx.done
-
-  const tombstoneTx = database.transaction('tombstones', 'readwrite')
-  for await (const cursor of tombstoneTx.store.iterate()) {
-    if (cursor.value.learnerId !== fromId) continue
-    await cursor.update({ ...cursor.value, learnerId: toId })
-    moved++
-  }
-  await tombstoneTx.done
-
-  const workingTx = database.transaction('workings', 'readwrite')
-  for await (const cursor of workingTx.store.iterate()) {
-    if (cursor.value.learnerId !== fromId) continue
-    await cursor.update({ ...cursor.value, learnerId: toId })
-  }
-  await workingTx.done
-
-  const learners = await loadLearners()
-  const old = learners.find((l) => l.id === fromId)
-  if (old) {
-    await saveLearner({ ...old, id: toId })
-    await (await db()).delete('learners', fromId)
-  }
-  return moved
-}
-
-/**
  * Removes specific sessions and everything recorded in them.
  *
  * Uses the same tombstone mechanism as a full erase, so a deleted session stays
@@ -556,45 +543,48 @@ export async function deleteSessions(
   deviceId: string,
 ): Promise<{ attemptsRemoved: number; sessionsRemoved: number }> {
   if (sessionIds.length === 0) return { attemptsRemoved: 0, sessionsRemoved: 0 }
-  const { makeRecordTombstone } = await import('../core/tombstones')
+  const { makeTombstones } = await import('../core/tombstones')
 
   const attempts = await loadAttempts()
   const doomed = new Set(sessionIds)
   const attemptIds = attempts.filter((a) => doomed.has(a.sessionId)).map((a) => a.id)
 
-  const tombstone = makeRecordTombstone(
-    learnerId,
-    deviceId,
-    [...sessionIds, ...attemptIds],
-    Date.now(),
-  )
-  await saveTombstones([tombstone], { enqueue: true })
-  const removed = await applyTombstonesLocally([tombstone])
+  // Attempts are not listed: a tombstone names the session, and an attempt
+  // belongs to one. That way a deletion also covers attempts from that session
+  // which this device has never seen, without naming a time span.
+  const tombstones = makeTombstones(sessionIds, learnerId, deviceId, Date.now())
+  await saveTombstones(tombstones, { enqueue: true })
+  const removed = await applyTombstonesLocally(tombstones)
   await deleteWorkings(attemptIds)
   return removed
 }
 
 /**
- * Erases practice history for a learner, durably.
+ * Erases practice history, durably.
  *
- * Writes a purge tombstone first, then drops the rows. The tombstone is the
- * part that matters: without it, importing any older export would silently
- * restore everything this call removed.
+ * A reset is not its own kind of deletion - it is a tombstone for every session
+ * currently stored. That keeps it bounded to history that exists: a device that
+ * was offline during the reset contributes its sessions afterwards rather than
+ * having them swallowed by a rule about time.
  */
 export async function erasePracticeData(
   learnerId: string,
   deviceId: string,
-): Promise<{ tombstone: Tombstone; attemptsRemoved: number; sessionsRemoved: number }> {
-  const { makePurge } = await import('../core/tombstones')
-  const attempts = await loadAttempts()
-  const latestKnownAt = attempts.reduce((max, a) => Math.max(max, a.at), 0)
-  const tombstone = makePurge(learnerId, deviceId, Date.now(), latestKnownAt)
-  await saveTombstones([tombstone], { enqueue: true })
-  const removed = await applyTombstonesLocally([tombstone])
+): Promise<{ tombstones: Tombstone[]; attemptsRemoved: number; sessionsRemoved: number }> {
+  const { makeTombstones } = await import('../core/tombstones')
+  // Sessions an attempt refers to are included even when the session record
+  // itself is missing, so a reset cannot leave orphaned practice behind.
+  const [sessions, attempts] = await Promise.all([loadSessions(), loadAttempts()])
+  const sessionIds = [
+    ...new Set([...sessions.map((s) => s.id), ...attempts.map((a) => a.sessionId)]),
+  ]
+  const tombstones = makeTombstones(sessionIds, learnerId, deviceId, Date.now())
+  await saveTombstones(tombstones, { enqueue: true })
+  const removed = await applyTombstonesLocally(tombstones)
   // Working-out belongs to the attempts being erased; leaving it would keep
   // pictures of work whose record is gone.
   const database = await db()
   const stale = await database.getAllFromIndex('workings', 'by-learner', learnerId)
   await deleteWorkings(stale.map((r) => r.attemptId))
-  return { tombstone, ...removed }
+  return { tombstones, ...removed }
 }

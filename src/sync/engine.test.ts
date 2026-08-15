@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { syncOnce, clockSkewIsConcerning, CLOCK_SKEW_WARN_MS } from './engine'
 import { createFakeBackend, FakeServer, MemoryLocalStore } from './fake'
-import { makePurge } from '../core/tombstones'
+import { makeTombstones } from '../core/tombstones'
 import type { Attempt, SessionRecord } from '../core/types'
 
 const L = 'learner-1'
@@ -130,7 +130,7 @@ describe('two-device convergence', () => {
 })
 
 describe('deletion across devices', () => {
-  it('propagates an erase to a device that already holds the data', async () => {
+  it('propagates a deletion to a device that already holds the data', async () => {
     const { a, b, syncA, syncB } = twoDevices()
     a.record(L, attempt('a1'))
     await syncA()
@@ -138,7 +138,7 @@ describe('deletion across devices', () => {
     expect(b.attempts.size).toBe(1)
 
     a.attempts.clear()
-    a.record(L, makePurge(L, 'device-a', T0 + 1000))
+    for (const t of makeTombstones(['sess-A'], L, 'device-a', T0 + 1000)) a.record(L, t)
     await syncA()
 
     const result = await syncB()
@@ -147,10 +147,11 @@ describe('deletion across devices', () => {
     expect(result.removedLocally).toBe(1)
   })
 
-  it('refuses records that a known deletion already covers', async () => {
+  it('refuses records from a session a known deletion already covers', async () => {
     const { a, b, syncA, syncB } = twoDevices()
-    // B erases; A then publishes an old record it never got round to sending.
-    b.record(L, makePurge(L, 'device-b', T0 + 1000))
+    // B deletes the session; A then publishes a record from it that it never
+    // got round to sending.
+    for (const t of makeTombstones(['sess-A'], L, 'device-b', T0 + 1000)) b.record(L, t)
     await syncB()
 
     a.record(L, attempt('stale', T0))
@@ -161,25 +162,27 @@ describe('deletion across devices', () => {
     expect(result.pulledAttempts).toBe(0)
   })
 
-  it('keeps work done after the erase', async () => {
+  it('keeps practice from every session the deletion does not name', async () => {
+    // The failure a time window caused: deleting on one device removed history
+    // from the others merely because it was older.
     const { a, b, syncA, syncB } = twoDevices()
-    b.record(L, makePurge(L, 'device-b', T0 + 1000))
+    for (const t of makeTombstones(['sess-A'], L, 'device-b', T0 + 9_000_000)) b.record(L, t)
     await syncB()
 
-    a.record(L, attempt('after', T0 + 5000))
+    a.record(L, attempt('elsewhere', T0 - 5000, 'B'))
     await syncA()
     await syncB()
 
-    expect([...b.attempts.keys()]).toEqual(['after'])
+    expect([...b.attempts.keys()]).toEqual(['elsewhere'])
   })
 
   it('applies a deletion arriving in the same pass as the records it covers', async () => {
     const { server, b, syncB } = twoDevices()
     // Both published before B has ever synced, so they arrive together.
-    server.accept(L, {
+    server.accept({
       attempts: [attempt('old', T0)],
       sessions: [],
-      tombstones: [makePurge(L, 'device-a', T0 + 1000)],
+      tombstones: makeTombstones(['sess-A'], L, 'device-a', T0 + 1000),
     })
     const result = await syncB()
     expect(b.attempts.size).toBe(0)
@@ -234,13 +237,13 @@ describe('cursor handling', () => {
     const backend = createFakeBackend(server)
     const b = new MemoryLocalStore()
 
-    server.accept(L, { attempts: [attempt('first')], sessions: [], tombstones: [] })
+    server.accept({ attempts: [attempt('first')], sessions: [], tombstones: [] })
     await syncOnce(L, backend, b)
     const cursor = await b.getCursor(L)
     expect(b.attempts.size).toBe(1)
 
     // A concurrent commit assigned a position *behind* the cursor already read.
-    server.acceptAtPosition(L, cursor - 1, {
+    server.acceptAtPosition(cursor - 1, {
       attempts: [attempt('straggler')],
       sessions: [],
       tombstones: [],
@@ -278,5 +281,50 @@ describe('clock skew', () => {
   it('tolerates ordinary drift', () => {
     expect(clockSkewIsConcerning(CLOCK_SKEW_WARN_MS - 1)).toBe(false)
     expect(clockSkewIsConcerning(-(CLOCK_SKEW_WARN_MS - 1))).toBe(false)
+  })
+})
+
+describe('one pool for the whole household', () => {
+  it('merges history across devices whatever learner id each generated', async () => {
+    // Each device mints its own learner id on first run. That id is local
+    // bookkeeping - it must not partition what a device can see, which is
+    // exactly the bug that made two signed-in devices sync nothing.
+    const server = new FakeServer()
+    const backend = createFakeBackend(server)
+    const laptop = new MemoryLocalStore()
+    const phone = new MemoryLocalStore()
+
+    laptop.record('learner-on-laptop', {
+      ...attempt('a1'),
+      learnerId: 'learner-on-laptop',
+    })
+    await syncOnce('learner-on-laptop', backend, laptop, { now: () => server.clock })
+
+    const result = await syncOnce('learner-on-phone', backend, phone, {
+      now: () => server.clock,
+    })
+    expect(result.pulledAttempts).toBe(1)
+    // Stamped with the reader's own learner, the way an import is, so local
+    // indexes and deletions all key off one value.
+    expect((await phone.loadAttempts())[0]?.learnerId).toBe('learner-on-phone')
+  })
+
+  it('carries a deletion across devices with different learner ids', async () => {
+    const server = new FakeServer()
+    const backend = createFakeBackend(server)
+    const laptop = new MemoryLocalStore()
+    const phone = new MemoryLocalStore()
+
+    laptop.record('l-laptop', { ...attempt('a1'), learnerId: 'l-laptop' })
+    await syncOnce('l-laptop', backend, laptop, { now: () => server.clock })
+    await syncOnce('l-phone', backend, phone, { now: () => server.clock })
+    expect(phone.attempts.size).toBe(1)
+
+    for (const t of makeTombstones(['sess-A'], 'l-laptop', 'device-a', T0 + 1000)) {
+      laptop.record('l-laptop', t)
+    }
+    await syncOnce('l-laptop', backend, laptop, { now: () => server.clock })
+    await syncOnce('l-phone', backend, phone, { now: () => server.clock })
+    expect(phone.attempts.size).toBe(0)
   })
 })

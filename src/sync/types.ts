@@ -29,12 +29,12 @@ export interface PullResult extends RecordSet {
  */
 export interface SyncBackend {
   /** Everything recorded at or after `since`. Implementations must be inclusive. */
-  pull(learnerId: string, since: number): Promise<PullResult>
+  pull(since: number): Promise<PullResult>
   /**
    * Publishes records. Must be idempotent: every record carries its own id, so
    * re-sending one that already exists is a no-op rather than an error.
    */
-  push(learnerId: string, records: RecordSet): Promise<void>
+  push(records: RecordSet): Promise<void>
 }
 
 /** The slice of local storage the engine touches. */
@@ -62,7 +62,7 @@ export interface SyncResult {
   pulledTombstones: number
   pushedRecords: number
   removedLocally: number
-  /** Device clock minus server clock, in ms. Large values corrupt purge windows. */
+  /** Device clock minus server clock, in ms. Annotation; nothing depends on it. */
   clockSkewMs: number
   status: 'ok' | 'offline' | 'error'
   error?: string

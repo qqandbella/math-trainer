@@ -26,8 +26,16 @@ import type { PullResult, RecordSet, SyncBackend } from './types'
 
 const MAX_BATCH = 450 // Firestore caps a batch at 500 writes; leave headroom.
 
-function pathFor(householdId: string, learnerId: string, kind: string): string[] {
-  return ['households', householdId, 'learners', learnerId, kind]
+/**
+ * One shared pool per household.
+ *
+ * History merges across every device in the account, so there is no level
+ * between the household and the records. An earlier layout nested them under a
+ * per-device learner id, which silently gave each device a private namespace
+ * and meant devices synced nothing to each other.
+ */
+function pathFor(householdId: string, kind: string): string[] {
+  return ['households', householdId, kind]
 }
 
 function stripSyncFields<T>(data: DocumentData): T {
@@ -44,11 +52,10 @@ export function createFirestoreBackend(
   householdId: string,
 ): SyncBackend {
   async function readKind<T>(
-    learnerId: string,
     kind: 'attempts' | 'sessions' | 'tombstones',
     since: number,
   ): Promise<{ records: T[]; maxStamp: number }> {
-    const [root, ...segments] = pathFor(householdId, learnerId, kind) as [string, ...string[]]
+    const [root, ...segments] = pathFor(householdId, kind) as [string, ...string[]]
     const ref = collection(db, root, ...segments)
     const snapshot = await getDocs(
       query(ref, where('syncedAt', '>=', Timestamp.fromMillis(since)), orderBy('syncedAt')),
@@ -64,11 +71,11 @@ export function createFirestoreBackend(
   }
 
   return {
-    async pull(learnerId, since): Promise<PullResult> {
+    async pull(since): Promise<PullResult> {
       const [attempts, sessions, tombstones] = await Promise.all([
-        readKind<Attempt>(learnerId, 'attempts', since),
-        readKind<SessionRecord>(learnerId, 'sessions', since),
-        readKind<Tombstone>(learnerId, 'tombstones', since),
+        readKind<Attempt>('attempts', since),
+        readKind<SessionRecord>('sessions', since),
+        readKind<Tombstone>('tombstones', since),
       ])
 
       const maxStamp = Math.max(attempts.maxStamp, sessions.maxStamp, tombstones.maxStamp)
@@ -87,7 +94,7 @@ export function createFirestoreBackend(
       }
     },
 
-    async push(learnerId, records: RecordSet): Promise<void> {
+    async push(records: RecordSet): Promise<void> {
       const writes: { kind: string; id: string; payload: DocumentData }[] = [
         ...records.attempts.map((a) => ({ kind: 'attempts', id: a.id, payload: { ...a } })),
         ...records.sessions.map((s) => ({ kind: 'sessions', id: s.id, payload: { ...s } })),
@@ -99,7 +106,7 @@ export function createFirestoreBackend(
         const chunk = writes.slice(offset, offset + MAX_BATCH)
         const batch = writeBatch(db)
         for (const write of chunk) {
-          const [root, ...segments] = pathFor(householdId, learnerId, write.kind) as [
+          const [root, ...segments] = pathFor(householdId, write.kind) as [
             string,
             ...string[],
           ]
@@ -118,7 +125,7 @@ export function createFirestoreBackend(
           // permanently. Fall back to per-document writes and let the ones that
           // are already present fail individually.
           if (!isPermissionDenied(error)) throw error
-          await pushIndividually(db, householdId, learnerId, chunk)
+          await pushIndividually(db, householdId, chunk)
         }
       }
     },
@@ -128,15 +135,11 @@ export function createFirestoreBackend(
 async function pushIndividually(
   db: Firestore,
   householdId: string,
-  learnerId: string,
   writes: { kind: string; id: string; payload: DocumentData }[],
 ): Promise<void> {
   const results = await Promise.allSettled(
     writes.map((write) => {
-      const [root, ...segments] = pathFor(householdId, learnerId, write.kind) as [
-        string,
-        ...string[],
-      ]
+      const [root, ...segments] = pathFor(householdId, write.kind) as [string, ...string[]]
       return setDoc(doc(collection(db, root, ...segments), write.id), {
         ...write.payload,
         syncedAt: serverTimestamp(),
