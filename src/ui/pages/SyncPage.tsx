@@ -25,8 +25,10 @@ export function relativeTime(from: number | null, now = Date.now()): string {
  * protects nothing and makes setting up each device unnecessarily awkward.
  */
 export function SyncPage({ navigate }: Props): ReactNode {
-  const { sync, signInToSync, signOutOfSyncing, runSync, attempts, preloadSignIn } =
+  const { sync, signInToSync, signOutOfSyncing, runSync, attempts, settings, preloadSignIn } =
     useAppState()
+  const [report, setReport] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
 
   // Warmed up here so the sign-in click can open a popup inside its own gesture,
   // which Safari requires.
@@ -120,6 +122,40 @@ export function SyncPage({ navigate }: Props): ReactNode {
           </p>
         )}
       </div>
+
+      {sync.account && (
+        <div className="card stack">
+          <h3>Account contents</h3>
+          <p className="faint" style={{ margin: 0 }}>
+            Shows what the account actually holds, so a short history can be told
+            apart from a hidden one.
+          </p>
+          <button
+            type="button"
+            className="btn btn-block"
+            disabled={checking}
+            onClick={() => {
+              setChecking(true)
+              void import('../../sync/diagnose')
+                .then(async ({ diagnoseSync, describeDiagnosis }) =>
+                  describeDiagnosis(await diagnoseSync(settings.activeLearnerId)),
+                )
+                .then(setReport)
+                .catch((error: unknown) =>
+                  setReport(error instanceof Error ? error.message : String(error)),
+                )
+                .finally(() => setChecking(false))
+            }}
+          >
+            {checking ? 'Checking…' : 'Check account'}
+          </button>
+          {report && (
+            <div className="code-block" style={{ whiteSpace: 'pre-wrap' }}>
+              {report}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <h3>Diagnostics</h3>
